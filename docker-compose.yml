@@ -1,0 +1,39 @@
+version: '3.7'
+
+services:
+  scaleway_exporter:
+    build: .
+    ports:
+      - 9503:9503
+    env_file:
+      - scaleway.env
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./hack/prometheus/:/etc/prometheus/
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - 9090:9090
+
+  alertmanager:
+    image: prom/alertmanager
+    depends_on:
+      - prometheus
+    ports:
+      - 9093:9093
+
+  grafana:
+    image: grafana/grafana
+    depends_on:
+      - prometheus
+    ports:
+      - 3000:3000
+    env_file:
+      - hack/grafana/grafana.default
+    volumes:
+      - ./hack/grafana/provisioning/:/etc/grafana/provisioning/
