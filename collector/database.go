@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -21,19 +22,19 @@ type DatabaseCollector struct {
 	rdbClient *rdb.API
 	timeout   time.Duration
 
-	Up           *prometheus.Desc
-	CPUs         *prometheus.Desc
-	Memory       *prometheus.Desc
-	Connection   *prometheus.Desc
-	Disk         *prometheus.Desc
+	Up         *prometheus.Desc
+	CPUs       *prometheus.Desc
+	Memory     *prometheus.Desc
+	Connection *prometheus.Desc
+	Disk       *prometheus.Desc
 }
 
 // NewDatabaseCollector returns a new DatabaseCollector.
 func NewDatabaseCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration) *DatabaseCollector {
 	errors.WithLabelValues("database").Add(0)
 
-	labels := []string{"id", "name", "region", "engine"}
-	labelsNode := []string{"id", "name", "region", "engine", "node"}
+	labels := []string{"id", "name", "region", "engine", "type"}
+	labelsNode := []string{"id", "name", "node"}
 	return &DatabaseCollector{
 		logger:    logger,
 		errors:    errors,
@@ -81,6 +82,7 @@ func (c *DatabaseCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect is called by the Prometheus registry when collecting metrics.
 func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
+
 	_, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
@@ -99,71 +101,91 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 
 	level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d database instances", len(response.Instances)))
 
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
 	for _, instance := range response.Instances {
-		labels := []string{
-			instance.ID,
-			instance.Name,
-			instance.Region.String(),
-			instance.Engine,
-		}
 
-		// TODO check if it is possible to add database tag as labels
-		//for _, tags := range instance.Tags {
-		//	labels = append(labels, tags)
-		//}
+		wg.Add(1)
 
-		var active float64
+		level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for database instance : %s", instance.Name))
 
-		switch instance.Status {
-		case rdb.InstanceStatusReady:
-			active = 1.0
-		case rdb.InstanceStatusBackuping:
-			active = 1.0
-		case rdb.InstanceStatusAutohealing:
-			active = 0.5
-		default:
-			active = 0.0
-		}
+		go c.FetchMetricsForInstance(&wg, ch, instance)
+	}
+}
 
-		ch <- prometheus.MustNewConstMetric(
-			c.Up,
-			prometheus.GaugeValue,
-			active,
-			labels...,
+func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, instance *rdb.Instance) {
+
+	defer parentWg.Done()
+
+	labels := []string{
+		instance.ID,
+		instance.Name,
+		instance.Region.String(),
+		instance.Engine,
+		instance.NodeType,
+	}
+
+	// TODO check if it is possible to add database tag as labels
+	//for _, tags := range instance.Tags {
+	//	labels = append(labels, tags)
+	//}
+
+	var active float64
+
+	switch instance.Status {
+	case rdb.InstanceStatusReady:
+		active = 1.0
+	case rdb.InstanceStatusBackuping:
+		active = 1.0
+	case rdb.InstanceStatusAutohealing:
+		active = 0.5
+	default:
+		active = 0.0
+	}
+
+	ch <- prometheus.MustNewConstMetric(
+		c.Up,
+		prometheus.GaugeValue,
+		active,
+		labels...,
+	)
+
+	metricResponse, err := c.rdbClient.GetInstanceMetrics(&rdb.GetInstanceMetricsRequest{InstanceID: instance.ID})
+
+	if err != nil {
+		c.errors.WithLabelValues("database").Add(1)
+		level.Warn(c.logger).Log(
+			"msg", "can't fetch the metric for the instance : "+instance.ID,
+			"err", err,
 		)
 
-		metricResponse, err := c.rdbClient.GetInstanceMetrics(&rdb.GetInstanceMetricsRequest{InstanceID: instance.ID})
+		return
+	}
 
-		if err != nil {
-			c.errors.WithLabelValues("database").Add(1)
-			level.Warn(c.logger).Log(
-				"msg", "can't fetch the metric for the instance : "+instance.ID,
-				"err", err,
-			)
+	for _, timeseries := range metricResponse.Timeseries {
 
-			continue
+		labelsNode := []string{
+			instance.ID,
+			instance.Name,
+			timeseries.Metadata["node"],
 		}
 
-		for _, timeseries := range metricResponse.Timeseries {
+		sort.Slice(timeseries.Points, func(i, j int) bool {
+			return timeseries.Points[i].Timestamp.Before(timeseries.Points[j].Timestamp)
+		})
 
-			labelsNode := append(labels, timeseries.Metadata["node"])
+		value := float64(timeseries.Points[len(timeseries.Points)-1].Value)
 
-			sort.Slice(timeseries.Points, func(i, j int) bool {
-				return timeseries.Points[i].Timestamp.Before(timeseries.Points[j].Timestamp)
-			})
-
-			value := float64(timeseries.Points[len(timeseries.Points)-1].Value)
-
-			switch timeseries.Name {
-			case "cpu_usage_percent":
-				ch <- prometheus.MustNewConstMetric(c.CPUs, prometheus.GaugeValue, value, labelsNode...)
-			case "mem_usage_percent":
-				ch <- prometheus.MustNewConstMetric(c.Memory, prometheus.GaugeValue, value, labelsNode...)
-			case "total_connections":
-				ch <- prometheus.MustNewConstMetric(c.Connection, prometheus.GaugeValue, value, labelsNode...)
-			case "disk_usage_percent":
-				ch <- prometheus.MustNewConstMetric(c.Disk, prometheus.GaugeValue, value, labelsNode...)
-			}
+		switch timeseries.Name {
+		case "cpu_usage_percent":
+			ch <- prometheus.MustNewConstMetric(c.CPUs, prometheus.GaugeValue, value, labelsNode...)
+		case "mem_usage_percent":
+			ch <- prometheus.MustNewConstMetric(c.Memory, prometheus.GaugeValue, value, labelsNode...)
+		case "total_connections":
+			ch <- prometheus.MustNewConstMetric(c.Connection, prometheus.GaugeValue, value, labelsNode...)
+		case "disk_usage_percent":
+			ch <- prometheus.MustNewConstMetric(c.Disk, prometheus.GaugeValue, value, labelsNode...)
 		}
 	}
 }

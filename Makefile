@@ -29,6 +29,13 @@ bin/scaleway_exporter:
 lint:
 	@docker build . --target lint
 
-.PHONY: compose
+.PHONY: compose-build
+compose:
+	@docker-compose build
+
+.PHONY: compose-up
 compose:
 	@docker-compose up -d
+
+.PHONY: compose
+compose: compose-build compose-up

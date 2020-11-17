@@ -112,6 +112,7 @@ func main() {
 
 	r.MustRegister(collector.NewDatabaseCollector(logger, errors, client, timeout))
 	r.MustRegister(collector.NewLoadBalancerCollector(logger, errors, client, timeout))
+	r.MustRegister(collector.NewBucketCollector(logger, errors, client, timeout))
 
 	http.Handle(c.WebPath,
 		promhttp.HandlerFor(r, promhttp.HandlerOpts{}),
