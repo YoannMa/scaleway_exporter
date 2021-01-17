@@ -45,5 +45,5 @@ jobs:
           tags: |
             yoannm/scaleway_exporter:latest
             yoannm/scaleway_exporter:master
-            ghcr.io/yonnnma/scaleway_exporter:latest
-            ghcr.io/yonnnma/scaleway_exporter:master
+            ghcr.io/yoannma/scaleway_exporter:latest
+            ghcr.io/yoannma/scaleway_exporter:master
