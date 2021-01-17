@@ -55,7 +55,7 @@ func (c *ExporterCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect is called by the Prometheus registry when collecting metrics.
 func (c *ExporterCollector) Collect(ch chan<- prometheus.Metric) {
-	level.Debug(c.logger).Log(
+	_ = level.Debug(c.logger).Log(
 		"starttime", c.startTime.Unix(),
 		"version", c.version,
 		"revision", c.revision,

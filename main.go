@@ -64,21 +64,21 @@ func main() {
 	)
 
 	if c.ScalewayAccessKey == "" {
-		level.Error(logger).Log("msg", "Scaleway Access Key is required", "err")
+		_ = level.Error(logger).Log("msg", "Scaleway Access Key is required", "err")
 		os.Exit(1)
 	}
 
 	if c.ScalewaySecretKey == "" {
-		level.Error(logger).Log("msg", "Scaleway Secret Key is required", "err")
+		_ = level.Error(logger).Log("msg", "Scaleway Secret Key is required", "err")
 		os.Exit(1)
 	}
 
 	if c.ScalewayRegion == "" {
-		level.Error(logger).Log("msg", "Scaleway Region is required", "err")
+		_ = level.Error(logger).Log("msg", "Scaleway Region is required", "err")
 		os.Exit(1)
 	}
 
-	level.Info(logger).Log(
+	_ = level.Info(logger).Log(
 		"msg", "starting scaleway_exporter",
 		"version", Version,
 		"revision", Revision,
@@ -93,7 +93,7 @@ func main() {
 	)
 
 	if err != nil {
-		level.Error(logger).Log("msg", "Scaleway client initialization error", "err", err)
+		_ = level.Error(logger).Log("msg", "Scaleway client initialization error", "err", err)
 		os.Exit(1)
 	}
 
@@ -128,9 +128,9 @@ func main() {
 			</html>`))
 	})
 
-	level.Info(logger).Log("msg", "listening", "addr", c.WebAddr)
+	_ = level.Info(logger).Log("msg", "listening", "addr", c.WebAddr)
 	if err := http.ListenAndServe(c.WebAddr, nil); err != nil {
-		level.Error(logger).Log("msg", "http listenandserve error", "err", err)
+		_ = level.Error(logger).Log("msg", "http listenandserve error", "err", err)
 		os.Exit(1)
 	}
 }
