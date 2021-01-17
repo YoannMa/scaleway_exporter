@@ -1,6 +1,6 @@
 PLATFORM=local
 
-REPOSITORY=yoannma/scaleway_exporter
+REPOSITORY=yoannm/scaleway_exporter
 VERSION=0.1.0
 
 export DOCKER_BUILDKIT=1
