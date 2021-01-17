@@ -51,7 +51,7 @@ func NewBucketCollector(logger log.Logger, errors *prometheus.CounterVec, client
 	})
 
 	if err != nil {
-		level.Error(logger).Log("msg", "can't create a S3 client", "err", err)
+		_ = level.Error(logger).Log("msg", "can't create a S3 client", "err", err)
 		os.Exit(1)
 	}
 
@@ -161,7 +161,7 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 
 	if err != nil {
 		c.errors.WithLabelValues("bucket").Add(1)
-		level.Warn(c.logger).Log("msg", "can't fetch the list of buckets", "err", err)
+		_ = level.Warn(c.logger).Log("msg", "can't fetch the list of buckets", "err", err)
 
 		return
 	}
@@ -180,9 +180,16 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 
 	projectId := strings.Split(*buckets.Owner.ID, ":")[0]
 
-	level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d buckets under projectID %s : %s", len(bucketNames), projectId, bucketNames))
+	_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d buckets under projectID %s : %s", len(bucketNames), projectId, bucketNames))
 
 	err = scwReq.SetBody(&BucketInfoRequestBody{ProjectId: projectId, BucketsName: bucketNames})
+
+	if err != nil {
+		c.errors.WithLabelValues("bucket").Add(1)
+		_ = level.Warn(c.logger).Log("msg", "can't fetch details of buckets", "err", err)
+
+		return
+	}
 
 	var response BucketInfoList
 
@@ -190,7 +197,7 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 
 	if err != nil {
 		c.errors.WithLabelValues("bucket").Add(1)
-		level.Warn(c.logger).Log("msg", "can't fetch details of buckets", "err", err)
+		_ = level.Warn(c.logger).Log("msg", "can't fetch details of buckets", "err", err)
 
 		return
 	}
@@ -202,7 +209,7 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 
 		wg.Add(1)
 
-		level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for bucket : %s", name))
+		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for bucket : %s", name))
 
 		go c.FetchMetricsForBucket(&wg, ch, name, bucket)
 	}
@@ -257,8 +264,10 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 	if err != nil {
 
 		c.errors.WithLabelValues("bucket").Add(1)
-		level.Warn(c.logger).Log(
-			"msg", "can't fetch the metric "+fmt.Sprint(options.MetricName)+" for the bucket : "+options.Bucket,
+		_ = level.Warn(c.logger).Log(
+			"msg", "can't fetch the metric",
+			"metric", options.MetricName,
+			"bucket", options.Bucket,
 			"err", err,
 		)
 
@@ -271,12 +280,22 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 			return timeseries.Points[i].Timestamp.Before(timeseries.Points[j].Timestamp)
 		})
 
+		if len(timeseries.Points) == 0 {
+			c.errors.WithLabelValues("bucket").Add(1)
+			_ = level.Warn(c.logger).Log(
+				"msg", "no data were returned for the metric",
+				"err", err,
+				"bucket", options.Bucket,
+				"metric", options.Desc,
+			)
+
+			continue
+		}
+
 		value := float64(timeseries.Points[len(timeseries.Points)-1].Value)
 
 		ch <- prometheus.MustNewConstMetric(options.Desc, prometheus.GaugeValue, value, options.labels...)
 	}
-
-	return
 }
 
 func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, options *HandleMultiMetricsOptions) {
@@ -290,8 +309,10 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 	if err != nil {
 
 		c.errors.WithLabelValues("bucket").Add(float64(len(options.DescMatrix)))
-		level.Warn(c.logger).Log(
-			"msg", "can't fetch the metric "+fmt.Sprint(options.MetricName)+" for the bucket : "+options.Bucket,
+		_ = level.Warn(c.logger).Log(
+			"msg", "can't fetch the metric",
+			"metric", options.MetricName,
+			"bucket", options.Bucket,
 			"err", err,
 		)
 
@@ -304,12 +325,34 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 			return timeseries.Points[i].Timestamp.Before(timeseries.Points[j].Timestamp)
 		})
 
+		series, ok := options.DescMatrix[timeseries.Metadata["type"]]
+
+		if !ok {
+			_ = level.Debug(c.logger).Log(
+				"msg", "unmapped scaleway metric",
+				"err", err,
+				"bucket", options.Bucket,
+				"scwMetric", timeseries.Name,
+			)
+			continue
+		}
+
+		if len(timeseries.Points) == 0 {
+			c.errors.WithLabelValues("bucket").Add(1)
+			_ = level.Warn(c.logger).Log(
+				"msg", "no data were returned for the metric",
+				"err", err,
+				"bucket", options.Bucket,
+				"metric", series,
+			)
+
+			continue
+		}
+
 		value := float64(timeseries.Points[len(timeseries.Points)-1].Value)
 
-		ch <- prometheus.MustNewConstMetric(options.DescMatrix[timeseries.Metadata["type"]], prometheus.GaugeValue, value, options.labels...)
+		ch <- prometheus.MustNewConstMetric(series, prometheus.GaugeValue, value, options.labels...)
 	}
-
-	return
 }
 
 func (c *BucketCollector) FetchMetric(Bucket string, MetricName MetricName, response *Metric) error {

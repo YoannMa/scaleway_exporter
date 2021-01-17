@@ -98,15 +98,12 @@ func (c *LoadBalancerCollector) Collect(ch chan<- prometheus.Metric) {
 
 	if err != nil {
 		c.errors.WithLabelValues("loadbalancer").Add(1)
-		level.Warn(c.logger).Log(
-			"msg", "can't fetch the list of loadbalancers",
-			"err", err,
-		)
+		_ = level.Warn(c.logger).Log("msg", "can't fetch the list of loadbalancers", "err", err)
 
 		return
 	}
 
-	level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d loadbalancer instances", len(response.LBs)))
+	_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d loadbalancer instances", len(response.LBs)))
 
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -115,7 +112,7 @@ func (c *LoadBalancerCollector) Collect(ch chan<- prometheus.Metric) {
 
 		wg.Add(1)
 
-		level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for loadbalancer : %s", loadbalancer.Name))
+		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for loadbalancer : %s", loadbalancer.Name))
 
 		go c.FetchLoadbalancerMetrics(&wg, ch, loadbalancer)
 	}
@@ -148,12 +145,7 @@ func (c *LoadBalancerCollector) FetchLoadbalancerMetrics(parentWg *sync.WaitGrou
 		active = 0.0
 	}
 
-	ch <- prometheus.MustNewConstMetric(
-		c.Up,
-		prometheus.GaugeValue,
-		active,
-		labels...,
-	)
+	ch <- prometheus.MustNewConstMetric(c.Up, prometheus.GaugeValue, active, labels...)
 
 	query := url.Values{}
 
@@ -173,9 +165,11 @@ func (c *LoadBalancerCollector) FetchLoadbalancerMetrics(parentWg *sync.WaitGrou
 
 	if err != nil {
 		c.errors.WithLabelValues("loadbalancer").Add(1)
-		level.Warn(c.logger).Log(
-			"msg", "can't fetch the metric for the loadbalancer : "+loadbalancer.ID,
+		_ = level.Warn(c.logger).Log(
+			"msg", "can't fetch the metric for the loadbalancer",
 			"err", err,
+			"loadbalancerId", loadbalancer.ID,
+			"loadbalancerName", loadbalancer.Name,
 		)
 
 		return
@@ -183,21 +177,47 @@ func (c *LoadBalancerCollector) FetchLoadbalancerMetrics(parentWg *sync.WaitGrou
 
 	for _, timeseries := range metricResponse.Timeseries {
 
+		var series *prometheus.Desc
+
+		switch timeseries.Name {
+		case "node_network_receive_bits_sec":
+			series = c.NetworkReceive
+		case "node_network_transmit_bits_sec":
+			series = c.NetworkTransmit
+		case "current_connection_rate_sec":
+			series = c.Connection
+		case "current_new_connection_rate_sec":
+			series = c.NewConnection
+		default:
+			_ = level.Debug(c.logger).Log(
+				"msg", "unmapped scaleway metric",
+				"err", err,
+				"loadbalancerId", loadbalancer.ID,
+				"loadbalancerName", loadbalancer.Name,
+				"scwMetric", timeseries.Name,
+			)
+			continue
+		}
+
+		if len(timeseries.Points) == 0 {
+			c.errors.WithLabelValues("database").Add(1)
+			_ = level.Warn(c.logger).Log(
+				"msg", "no data were returned for the metric",
+				"err", err,
+				"loadbalancerId", loadbalancer.ID,
+				"loadbalancerName", loadbalancer.Name,
+				"metric", series,
+			)
+
+			continue
+		}
+
 		sort.Slice(timeseries.Points, func(i, j int) bool {
 			return timeseries.Points[i].Timestamp.Before(timeseries.Points[j].Timestamp)
 		})
 
 		value := float64(timeseries.Points[len(timeseries.Points)-1].Value)
 
-		switch timeseries.Name {
-		case "node_network_receive_bits_sec":
-			ch <- prometheus.MustNewConstMetric(c.NetworkReceive, prometheus.GaugeValue, value, labels...)
-		case "node_network_transmit_bits_sec":
-			ch <- prometheus.MustNewConstMetric(c.NetworkTransmit, prometheus.GaugeValue, value, labels...)
-		case "current_connection_rate_sec":
-			ch <- prometheus.MustNewConstMetric(c.Connection, prometheus.GaugeValue, value, labels...)
-		case "current_new_connection_rate_sec":
-			ch <- prometheus.MustNewConstMetric(c.NewConnection, prometheus.GaugeValue, value, labels...)
-		}
+		ch <- prometheus.MustNewConstMetric(series, prometheus.GaugeValue, value, labels...)
 	}
 }

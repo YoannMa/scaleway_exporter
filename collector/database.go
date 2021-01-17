@@ -91,7 +91,7 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 
 	if err != nil {
 		c.errors.WithLabelValues("database").Add(1)
-		level.Warn(c.logger).Log(
+		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the list of databases",
 			"err", err,
 		)
@@ -99,7 +99,7 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
-	level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d database instances", len(response.Instances)))
+	_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d database instances", len(response.Instances)))
 
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -108,7 +108,7 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 
 		wg.Add(1)
 
-		level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for database instance : %s", instance.Name))
+		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for database instance : %s", instance.Name))
 
 		go c.FetchMetricsForInstance(&wg, ch, instance)
 	}
@@ -155,9 +155,11 @@ func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch
 
 	if err != nil {
 		c.errors.WithLabelValues("database").Add(1)
-		level.Warn(c.logger).Log(
-			"msg", "can't fetch the metric for the instance : "+instance.ID,
+		_ = level.Warn(c.logger).Log(
+			"msg", "can't fetch the metric for the instance",
 			"err", err,
+			"instanceId", instance.ID,
+			"instanceName", instance.Name,
 		)
 
 		return
@@ -171,21 +173,47 @@ func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch
 			timeseries.Metadata["node"],
 		}
 
+		var series *prometheus.Desc
+
+		switch timeseries.Name {
+		case "cpu_usage_percent":
+			series = c.CPUs
+		case "mem_usage_percent":
+			series = c.Memory
+		case "total_connections":
+			series = c.Connection
+		case "disk_usage_percent":
+			series = c.Disk
+		default:
+			_ = level.Debug(c.logger).Log(
+				"msg", "unmapped scaleway metric",
+				"err", err,
+				"instanceId", instance.ID,
+				"instanceName", instance.Name,
+				"scwMetric", timeseries.Name,
+			)
+			continue
+		}
+
+		if len(timeseries.Points) == 0 {
+			c.errors.WithLabelValues("database").Add(1)
+			_ = level.Warn(c.logger).Log(
+				"msg", "no data were returned for the metric",
+				"err", err,
+				"instanceId", instance.ID,
+				"instanceName", instance.Name,
+				"metric", series,
+			)
+
+			continue
+		}
+
 		sort.Slice(timeseries.Points, func(i, j int) bool {
 			return timeseries.Points[i].Timestamp.Before(timeseries.Points[j].Timestamp)
 		})
 
 		value := float64(timeseries.Points[len(timeseries.Points)-1].Value)
 
-		switch timeseries.Name {
-		case "cpu_usage_percent":
-			ch <- prometheus.MustNewConstMetric(c.CPUs, prometheus.GaugeValue, value, labelsNode...)
-		case "mem_usage_percent":
-			ch <- prometheus.MustNewConstMetric(c.Memory, prometheus.GaugeValue, value, labelsNode...)
-		case "total_connections":
-			ch <- prometheus.MustNewConstMetric(c.Connection, prometheus.GaugeValue, value, labelsNode...)
-		case "disk_usage_percent":
-			ch <- prometheus.MustNewConstMetric(c.Disk, prometheus.GaugeValue, value, labelsNode...)
-		}
+		ch <- prometheus.MustNewConstMetric(series, prometheus.GaugeValue, value, labelsNode...)
 	}
 }
