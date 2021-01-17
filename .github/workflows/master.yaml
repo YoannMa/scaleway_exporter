@@ -43,7 +43,7 @@ jobs:
           platforms: linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
           push: true
           tags: |
-            yonnnm/scaleway_exporter:latest
-            yonnnm/scaleway_exporter:master
+            yoannm/scaleway_exporter:latest
+            yoannm/scaleway_exporter:master
             ghcr.io/yonnnma/scaleway_exporter:latest
             ghcr.io/yonnnma/scaleway_exporter:master
