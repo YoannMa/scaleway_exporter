@@ -45,7 +45,7 @@ jobs:
           platforms: linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
           push: true
           tags: |
-            yoannma/scaleway_exporter:${{ steps.get_version.outputs.VERSION }}
+            yoannm/scaleway_exporter:${{ steps.get_version.outputs.VERSION }}
             ghcr.io/yonnnma/scaleway_exporter:${{ steps.get_version.outputs.VERSION }}
       -
         name: Create Release
