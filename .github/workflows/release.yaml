@@ -13,6 +13,10 @@ jobs:
         name: Checkout
         uses: actions/checkout@v2
       -
+        name: Get the version
+        id: get_version
+        run: echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
+      -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v1
       -
@@ -41,8 +45,8 @@ jobs:
           platforms: linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
           push: true
           tags: |
-            yoannma/scaleway_exporter:${{ github.ref }}
-            ghcr.io/yonnnma/scaleway_exporter:${{ github.ref }}
+            yoannma/scaleway_exporter:${{ steps.get_version.outputs.VERSION }}
+            ghcr.io/yonnnma/scaleway_exporter:${{ steps.get_version.outputs.VERSION }}
       -
         name: Create Release
         id: create_release
@@ -50,7 +54,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          release_name: Release ${{ steps.get_version.outputs.VERSION }}
           draft: false
           prerelease: false
