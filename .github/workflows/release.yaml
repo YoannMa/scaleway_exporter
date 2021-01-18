@@ -46,7 +46,7 @@ jobs:
           push: true
           tags: |
             yoannm/scaleway_exporter:${{ steps.get_version.outputs.VERSION }}
-            ghcr.io/yonnnma/scaleway_exporter:${{ steps.get_version.outputs.VERSION }}
+            ghcr.io/yoannma/scaleway_exporter:${{ steps.get_version.outputs.VERSION }}
       -
         name: Create Release
         id: create_release
