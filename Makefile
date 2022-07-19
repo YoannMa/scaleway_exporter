@@ -1,7 +1,7 @@
 PLATFORM=local
 
 REPOSITORY=yoannm/scaleway_exporter
-VERSION=0.1.0
+VERSION=0.2.0
 
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1

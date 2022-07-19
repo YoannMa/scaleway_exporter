@@ -31,23 +31,28 @@ var (
 
 // Config gets its content from env and passes it on to different packages
 type Config struct {
-	Debug             bool       `arg:"env:DEBUG"`
-	ScalewayAccessKey string     `arg:"env:SCALEWAY_ACCESS_KEY"`
-	ScalewaySecretKey string     `arg:"env:SCALEWAY_SECRET_KEY"`
-	ScalewayRegion    scw.Region `arg:"env:SCALEWAY_REGION"`
-	HTTPTimeout       int        `arg:"env:HTTP_TIMEOUT"`
-	WebAddr           string     `arg:"env:WEB_ADDR"`
-	WebPath           string     `arg:"env:WEB_PATH"`
+	Debug                        bool       `arg:"env:DEBUG"`
+	ScalewayAccessKey            string     `arg:"env:SCALEWAY_ACCESS_KEY"`
+	ScalewaySecretKey            string     `arg:"env:SCALEWAY_SECRET_KEY"`
+	ScalewayRegion               scw.Region `arg:"env:SCALEWAY_REGION"`
+	HTTPTimeout                  int        `arg:"env:HTTP_TIMEOUT"`
+	WebAddr                      string     `arg:"env:WEB_ADDR"`
+	WebPath                      string     `arg:"env:WEB_PATH"`
+	DisableBucketCollector       bool       `arg:"--disable-bucket-collector"`
+	DisableDatabaseCollector     bool       `arg:"--disable-database-collector"`
+	DisableLoadBalancerCollector bool       `arg:"--disable-loadbalancer-collector"`
 }
 
 func main() {
 	_ = godotenv.Load()
 
 	c := Config{
-		HTTPTimeout:    5000,
-		WebPath:        "/metrics",
-		WebAddr:        ":9503",
-		ScalewayRegion: scw.RegionFrPar,
+		HTTPTimeout:                  5000,
+		WebPath:                      "/metrics",
+		WebAddr:                      ":9503",
+		DisableBucketCollector:       false,
+		DisableDatabaseCollector:     false,
+		DisableLoadBalancerCollector: false,
 	}
 	arg.MustParse(&c)
 
@@ -73,9 +78,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	var regions []scw.Region
 	if c.ScalewayRegion == "" {
-		_ = level.Error(logger).Log("msg", "Scaleway Region is required", "err")
-		os.Exit(1)
+		_ = level.Info(logger).Log("msg", "Scaleway Region is set to ALL")
+		regions = scw.AllRegions
+	} else {
+		regions = []scw.Region{scw.Region(c.ScalewayRegion)}
 	}
 
 	_ = level.Info(logger).Log(
@@ -88,7 +96,7 @@ func main() {
 
 	client, err := scw.NewClient(
 		// Get your credentials at https://console.scaleway.com/account/credentials
-		scw.WithDefaultRegion(c.ScalewayRegion),
+		scw.WithDefaultRegion(regions[0]),
 		scw.WithAuth(c.ScalewayAccessKey, c.ScalewaySecretKey),
 	)
 
@@ -110,9 +118,15 @@ func main() {
 	r.MustRegister(errors)
 	r.MustRegister(collector.NewExporterCollector(logger, Version, Revision, BuildDate, GoVersion, StartTime))
 
-	r.MustRegister(collector.NewDatabaseCollector(logger, errors, client, timeout))
-	r.MustRegister(collector.NewLoadBalancerCollector(logger, errors, client, timeout))
-	r.MustRegister(collector.NewBucketCollector(logger, errors, client, timeout))
+	if !c.DisableDatabaseCollector {
+		r.MustRegister(collector.NewDatabaseCollector(logger, errors, client, timeout, regions))
+	}
+	if !c.DisableBucketCollector {
+		r.MustRegister(collector.NewBucketCollector(logger, errors, client, timeout, regions))
+	}
+	if !c.DisableLoadBalancerCollector {
+		r.MustRegister(collector.NewLoadBalancerCollector(logger, errors, client, timeout, regions))
+	}
 
 	http.Handle(c.WebPath,
 		promhttp.HandlerFor(r, promhttp.HandlerOpts{}),

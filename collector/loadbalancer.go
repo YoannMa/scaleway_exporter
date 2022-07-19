@@ -23,6 +23,7 @@ type LoadBalancerCollector struct {
 	client   *scw.Client
 	lbClient *lb.API
 	timeout  time.Duration
+	regions  []scw.Region
 
 	Up              *prometheus.Desc
 	NetworkReceive  *prometheus.Desc
@@ -32,7 +33,7 @@ type LoadBalancerCollector struct {
 }
 
 // NewLoadBalancerCollector returns a new LoadBalancerCollector.
-func NewLoadBalancerCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration) *LoadBalancerCollector {
+func NewLoadBalancerCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, regions []scw.Region) *LoadBalancerCollector {
 	errors.WithLabelValues("loadbalancer").Add(0)
 
 	labels := []string{"id", "name", "region", "type"}
@@ -42,6 +43,7 @@ func NewLoadBalancerCollector(logger log.Logger, errors *prometheus.CounterVec, 
 		client:   client,
 		lbClient: lb.NewAPI(client),
 		timeout:  timeout,
+		regions:  regions,
 
 		Up: prometheus.NewDesc(
 			"scaleway_loadbalancer_up",
@@ -93,28 +95,31 @@ func (c *LoadBalancerCollector) Collect(ch chan<- prometheus.Metric) {
 	_, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	// create a list to hold our loadbalancers
-	response, err := c.lbClient.ListLBs(&lb.ListLBsRequest{})
+	for _, region := range c.regions {
 
-	if err != nil {
-		c.errors.WithLabelValues("loadbalancer").Add(1)
-		_ = level.Warn(c.logger).Log("msg", "can't fetch the list of loadbalancers", "err", err)
+		// create a list to hold our loadbalancers
+		response, err := c.lbClient.ListLBs(&lb.ListLBsRequest{Region: region}, scw.WithAllPages())
 
-		return
-	}
+		if err != nil {
+			c.errors.WithLabelValues("loadbalancer").Add(1)
+			_ = level.Warn(c.logger).Log("msg", "can't fetch the list of loadbalancers", "err", err)
 
-	_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d loadbalancer instances", len(response.LBs)))
+			return
+		}
 
-	var wg sync.WaitGroup
-	defer wg.Wait()
+		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d loadbalancer instances", len(response.LBs)))
 
-	for _, loadbalancer := range response.LBs {
+		var wg sync.WaitGroup
+		defer wg.Wait()
 
-		wg.Add(1)
+		for _, loadbalancer := range response.LBs {
 
-		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for loadbalancer : %s", loadbalancer.Name))
+			wg.Add(1)
 
-		go c.FetchLoadbalancerMetrics(&wg, ch, loadbalancer)
+			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for loadbalancer : %s", loadbalancer.Name))
+
+			go c.FetchLoadbalancerMetrics(&wg, ch, loadbalancer)
+		}
 	}
 }
 
