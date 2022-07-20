@@ -21,6 +21,7 @@ type DatabaseCollector struct {
 	client    *scw.Client
 	rdbClient *rdb.API
 	timeout   time.Duration
+	regions   []scw.Region
 
 	Up         *prometheus.Desc
 	CPUs       *prometheus.Desc
@@ -30,7 +31,7 @@ type DatabaseCollector struct {
 }
 
 // NewDatabaseCollector returns a new DatabaseCollector.
-func NewDatabaseCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration) *DatabaseCollector {
+func NewDatabaseCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, regions []scw.Region) *DatabaseCollector {
 	errors.WithLabelValues("database").Add(0)
 
 	labels := []string{"id", "name", "region", "engine", "type"}
@@ -41,6 +42,7 @@ func NewDatabaseCollector(logger log.Logger, errors *prometheus.CounterVec, clie
 		client:    client,
 		rdbClient: rdb.NewAPI(client),
 		timeout:   timeout,
+		regions:   regions,
 
 		Up: prometheus.NewDesc(
 			"scaleway_database_up",
@@ -86,32 +88,36 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 	_, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	// create a list to hold our databases
-	response, err := c.rdbClient.ListInstances(&rdb.ListInstancesRequest{})
-
-	if err != nil {
-		c.errors.WithLabelValues("database").Add(1)
-		_ = level.Warn(c.logger).Log(
-			"msg", "can't fetch the list of databases",
-			"err", err,
-		)
-
-		return
-	}
-
-	_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d database instances", len(response.Instances)))
-
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
-	for _, instance := range response.Instances {
+	for _, region := range c.regions {
 
-		wg.Add(1)
+		// create a list to hold our databases
+		response, err := c.rdbClient.ListInstances(&rdb.ListInstancesRequest{Region: region}, scw.WithAllPages())
 
-		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for database instance : %s", instance.Name))
+		if err != nil {
+			c.errors.WithLabelValues("database").Add(1)
+			_ = level.Warn(c.logger).Log(
+				"msg", "can't fetch the list of databases",
+				"err", err,
+			)
 
-		go c.FetchMetricsForInstance(&wg, ch, instance)
+			return
+		}
+
+		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d database instances", len(response.Instances)))
+
+		for _, instance := range response.Instances {
+
+			wg.Add(1)
+
+			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for database instance : %s", instance.Name))
+
+			go c.FetchMetricsForInstance(&wg, ch, instance)
+		}
 	}
+
 }
 
 func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, instance *rdb.Instance) {
@@ -151,7 +157,7 @@ func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch
 		labels...,
 	)
 
-	metricResponse, err := c.rdbClient.GetInstanceMetrics(&rdb.GetInstanceMetricsRequest{InstanceID: instance.ID})
+	metricResponse, err := c.rdbClient.GetInstanceMetrics(&rdb.GetInstanceMetricsRequest{Region: instance.Region, InstanceID: instance.ID})
 
 	if err != nil {
 		c.errors.WithLabelValues("database").Add(1)
