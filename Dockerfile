@@ -1,6 +1,6 @@
-# syntax = docker/dockerfile:1-experimental
+# syntax=docker/dockerfile:1
 
-FROM --platform=${BUILDPLATFORM} golang:1.15-alpine AS base
+FROM --platform=${BUILDPLATFORM} golang:1.19-alpine AS base
 WORKDIR /src
 ENV CGO_ENABLED=0
 COPY go.* .
@@ -15,7 +15,7 @@ RUN --mount=target=. \
     --mount=type=cache,target=/root/.cache/go-build \
     GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/scaleway-exporter .
 
-FROM golangci/golangci-lint:v1.35-alpine AS lint-base
+FROM golangci/golangci-lint:v1.50-alpine AS lint-base
 
 FROM base AS lint
 RUN --mount=target=. \
