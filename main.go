@@ -35,12 +35,14 @@ type Config struct {
 	ScalewayAccessKey            string     `arg:"env:SCALEWAY_ACCESS_KEY"`
 	ScalewaySecretKey            string     `arg:"env:SCALEWAY_SECRET_KEY"`
 	ScalewayRegion               scw.Region `arg:"env:SCALEWAY_REGION"`
+	ScalewayZone                 scw.Zone   `arg:"env:SCALEWAY_ZONE"`
 	HTTPTimeout                  int        `arg:"env:HTTP_TIMEOUT"`
 	WebAddr                      string     `arg:"env:WEB_ADDR"`
 	WebPath                      string     `arg:"env:WEB_PATH"`
 	DisableBucketCollector       bool       `arg:"--disable-bucket-collector"`
 	DisableDatabaseCollector     bool       `arg:"--disable-database-collector"`
 	DisableLoadBalancerCollector bool       `arg:"--disable-loadbalancer-collector"`
+	DisableRedisCollector        bool       `arg:"--disable-redis-collector"`
 }
 
 func main() {
@@ -86,6 +88,14 @@ func main() {
 		regions = []scw.Region{scw.Region(c.ScalewayRegion)}
 	}
 
+	var zones []scw.Zone
+	if c.ScalewayZone == "" {
+		_ = level.Info(logger).Log("msg", "Scaleway Zone is set to ALL")
+		zones = scw.AllZones
+	} else {
+		zones = []scw.Zone{scw.Zone(c.ScalewayZone)}
+	}
+
 	_ = level.Info(logger).Log(
 		"msg", "starting scaleway_exporter",
 		"version", Version,
@@ -126,6 +136,9 @@ func main() {
 	}
 	if !c.DisableLoadBalancerCollector {
 		r.MustRegister(collector.NewLoadBalancerCollector(logger, errors, client, timeout, regions))
+	}
+	if !c.DisableRedisCollector {
+		r.MustRegister(collector.NewRedisCollector(logger, errors, client, timeout, zones))
 	}
 
 	http.Handle(c.WebPath,
