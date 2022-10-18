@@ -13,8 +13,8 @@ level=info ts=2022-07-19T13:25:40.352550422Z caller=main.go:89 msg="starting sca
 level=info ts=2022-07-19T13:25:40.352691527Z caller=main.go:145 msg=listening addr=:9503
 ```
 
-By default, all the collectors are enabled (buckets, databases, loadbalancer) over all Scaleway regions and zones.
-If needed, you can disable certain collections by adding the `disable-bucket-collector`, `disable-database-collector` or `disable-loadbalancer-collector` flags to the command line.
+By default, all the collectors are enabled (buckets, databases, loadbalancer, redis) over all Scaleway regions and zones.
+If needed, you can disable certain collections by adding the `disable-bucket-collector`, `disable-database-collector`, `disable-redis-collector` or `disable-loadbalancer-collector` flags to the command line.
 You can also limit the scraped region by setting the environment variable `SCALEWAY_REGION=fr-par` and the zone with the environment variable `SCALEWAY_ZONE=fr-par-1` for instance.
 
 ## TODO
