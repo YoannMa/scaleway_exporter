@@ -3,7 +3,7 @@ package collector
 import (
 	"context"
 	"fmt"
-	"net/http"
+	"github.com/scaleway/scaleway-sdk-go/api/redis/v1"
 	"sort"
 	"sync"
 	"time"
@@ -16,11 +16,12 @@ import (
 
 // RedisCollector collects metrics about all redis nodes.
 type RedisCollector struct {
-	logger  log.Logger
-	errors  *prometheus.CounterVec
-	client  *scw.Client
-	timeout time.Duration
-	zones   []scw.Zone
+	logger      log.Logger
+	errors      *prometheus.CounterVec
+	client      *scw.Client
+	redisClient *redis.API
+	timeout     time.Duration
+	zones       []scw.Zone
 
 	CpuUsagePercent      *prometheus.Desc
 	MemUsagePercent      *prometheus.Desc
@@ -37,11 +38,12 @@ func NewRedisCollector(logger log.Logger, errors *prometheus.CounterVec, client 
 	labels := []string{"id", "name", "node"}
 
 	return &RedisCollector{
-		logger:  logger,
-		errors:  errors,
-		client:  client,
-		timeout: timeout,
-		zones:   zones,
+		logger:      logger,
+		errors:      errors,
+		client:      client,
+		redisClient: redis.NewAPI(client),
+		timeout:     timeout,
+		zones:       zones,
 
 		CpuUsagePercent: prometheus.NewDesc(
 			"scaleway_redis_cpu_usage_percent",
@@ -69,21 +71,6 @@ func (c *RedisCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.DbMemoryUsagePercent
 }
 
-type Cluster struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type Clusters struct {
-	Cluster []*Cluster `json:"clusters"`
-}
-
-// InstanceMetrics: instance metrics
-type RedisMetrics struct {
-	// Timeseries: time series of metrics of a given instance
-	Timeseries []*scw.TimeSeries `json:"timeseries"`
-}
-
 // Collect is called by the Prometheus registry when collecting metrics.
 func (c *RedisCollector) Collect(ch chan<- prometheus.Metric) {
 
@@ -95,15 +82,7 @@ func (c *RedisCollector) Collect(ch chan<- prometheus.Metric) {
 
 	for _, zone := range c.zones {
 
-		scwReq := &scw.ScalewayRequest{
-			Method:  "GET",
-			Path:    "/redis/v1/zones/" + fmt.Sprint(zone) + "/clusters",
-			Headers: http.Header{},
-		}
-
-		var response Clusters
-
-		err := c.client.Do(scwReq, &response)
+		clusterList, err := c.redisClient.ListClusters(&redis.ListClustersRequest{Zone: zone})
 
 		if err != nil {
 			c.errors.WithLabelValues("clusters").Add(1)
@@ -115,7 +94,7 @@ func (c *RedisCollector) Collect(ch chan<- prometheus.Metric) {
 		var wg sync.WaitGroup
 		defer wg.Wait()
 
-		for _, cluster := range response.Cluster {
+		for _, cluster := range clusterList.Clusters {
 
 			wg.Add(1)
 
@@ -127,18 +106,14 @@ func (c *RedisCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (c *RedisCollector) FetchRedisMetrics(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, zone scw.Zone, cluster *Cluster) {
+func (c *RedisCollector) FetchRedisMetrics(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, zone scw.Zone, cluster *redis.Cluster) {
 
 	defer parentWg.Done()
 
-	scwReq := &scw.ScalewayRequest{
-		Method: "GET",
-		Path:   "/redis/v1/zones/" + fmt.Sprint(zone) + "/clusters/" + fmt.Sprint(cluster.ID) + "/metrics",
-	}
-
-	var metricResponse RedisMetrics
-
-	err := c.client.Do(scwReq, &metricResponse)
+	metricResponse, err := c.redisClient.GetClusterMetrics(&redis.GetClusterMetricsRequest{
+		Zone:      zone,
+		ClusterID: cluster.ID,
+	})
 
 	if err != nil {
 		c.errors.WithLabelValues("redis").Add(1)
