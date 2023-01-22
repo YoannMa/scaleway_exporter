@@ -27,10 +27,9 @@ type BucketCollector struct {
 	endpoints []Endpoint
 	timeout   time.Duration
 
-	ObjectCount          *prometheus.Desc
-	Bandwidth            *prometheus.Desc
-	StorageUsageStandard *prometheus.Desc
-	StorageUsageGlacier  *prometheus.Desc
+	ObjectCount  *prometheus.Desc
+	Bandwidth    *prometheus.Desc
+	StorageUsage *prometheus.Desc
 }
 
 type Endpoint struct {
@@ -91,15 +90,10 @@ func NewBucketCollector(logger log.Logger, errors *prometheus.CounterVec, client
 			"Bucket's Bandwidth usage",
 			[]string{"name", "region", "public"}, nil,
 		),
-		StorageUsageStandard: prometheus.NewDesc(
-			"scaleway_s3_storage_usage_standard_bytes",
+		StorageUsage: prometheus.NewDesc(
+			"scaleway_s3_storage_usage_bytes",
 			"Bucket's Storage usage",
-			[]string{"name", "region", "public"}, nil,
-		),
-		StorageUsageGlacier: prometheus.NewDesc(
-			"scaleway_s3_storage_usage_glacier_bytes",
-			"Bucket's Storage usage",
-			[]string{"name", "region", "public"}, nil,
+			[]string{"name", "region", "public", "storage_class"}, nil,
 		),
 	}
 }
@@ -109,8 +103,7 @@ func NewBucketCollector(logger log.Logger, errors *prometheus.CounterVec, client
 func (c *BucketCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.ObjectCount
 	ch <- c.Bandwidth
-	ch <- c.StorageUsageStandard
-	ch <- c.StorageUsageGlacier
+	ch <- c.StorageUsage
 }
 
 type BucketInfo struct {
@@ -159,11 +152,12 @@ type HandleSimpleMetricOptions struct {
 }
 
 type HandleMultiMetricsOptions struct {
-	Bucket     string
-	MetricName MetricName
-	DescMatrix map[string]*prometheus.Desc
-	labels     []string
-	Endpoint   Endpoint
+	Bucket        string
+	MetricName    MetricName
+	Desc          *prometheus.Desc
+	labels        []string
+	Endpoint      Endpoint
+	GetExtraLabel func(*scw.TimeSeries) string
 }
 
 // Collect is called by the Prometheus registry when collecting metrics.
@@ -269,8 +263,12 @@ func (c *BucketCollector) FetchMetricsForBucket(parentWg *sync.WaitGroup, ch cha
 		Bucket:     name,
 		MetricName: StorageUsage,
 		labels:     labels,
-		DescMatrix: map[string]*prometheus.Desc{"STANDARD": c.StorageUsageStandard, "GLACIER": c.StorageUsageGlacier},
 		Endpoint:   endpoint,
+		Desc:       c.StorageUsage,
+		GetExtraLabel: func(timeseries *scw.TimeSeries) string {
+
+			return timeseries.Metadata["type"]
+		},
 	})
 }
 
@@ -329,7 +327,7 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 
 	if err != nil {
 
-		c.errors.WithLabelValues("bucket").Add(float64(len(options.DescMatrix)))
+		c.errors.WithLabelValues("bucket").Add(1)
 		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the metric",
 			"metric", options.MetricName,
@@ -346,17 +344,7 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 			return timeseries.Points[i].Timestamp.Before(timeseries.Points[j].Timestamp)
 		})
 
-		series, ok := options.DescMatrix[timeseries.Metadata["type"]]
-
-		if !ok {
-			_ = level.Debug(c.logger).Log(
-				"msg", "unmapped scaleway metric",
-				"err", err,
-				"bucket", options.Bucket,
-				"scwMetric", timeseries.Name,
-			)
-			continue
-		}
+		extraLabel := options.GetExtraLabel(timeseries)
 
 		if len(timeseries.Points) == 0 {
 			c.errors.WithLabelValues("bucket").Add(1)
@@ -364,7 +352,8 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 				"msg", "no data were returned for the metric",
 				"err", err,
 				"bucket", options.Bucket,
-				"metric", series,
+				"metric", options.MetricName,
+				"extra_label", extraLabel,
 			)
 
 			continue
@@ -372,7 +361,9 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 
 		value := float64(timeseries.Points[len(timeseries.Points)-1].Value)
 
-		ch <- prometheus.MustNewConstMetric(series, prometheus.GaugeValue, value, options.labels...)
+		allLabels := append(append([]string{}, options.labels...), extraLabel)
+
+		ch <- prometheus.MustNewConstMetric(options.Desc, prometheus.GaugeValue, value, allLabels...)
 	}
 }
 
