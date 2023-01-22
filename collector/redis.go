@@ -186,9 +186,9 @@ func (c *RedisCollector) FetchRedisMetrics(parentWg *sync.WaitGroup, ch chan<- p
 			c.errors.WithLabelValues("redis").Add(1)
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
+				"metric", timeseries.Name,
 				"clusterName", cluster.Name,
 				"clusterId", cluster.ID,
-				"metric", series,
 				"zone", zone,
 				"err", err,
 			)

@@ -214,10 +214,10 @@ func (c *LoadBalancerCollector) FetchLoadbalancerMetrics(parentWg *sync.WaitGrou
 			c.errors.WithLabelValues("database").Add(1)
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
-				"region", loadbalancer.Region,
-				"loadbalancerId", loadbalancer.ID,
 				"loadbalancerName", loadbalancer.Name,
-				"metric", series,
+				"loadbalancerId", loadbalancer.ID,
+				"region", loadbalancer.Region,
+				"metric", timeseries.Name,
 				"err", err,
 			)
 

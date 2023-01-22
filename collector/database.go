@@ -215,11 +215,11 @@ func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch
 			c.errors.WithLabelValues("database").Add(1)
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
-				"err", err,
-				"region", instance.Region,
-				"instanceId", instance.ID,
 				"instanceName", instance.Name,
-				"metric", series,
+				"instanceId", instance.ID,
+				"metric", timeseries.Name,
+				"region", instance.Region,
+				"err", err,
 			)
 
 			continue

@@ -305,8 +305,8 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
 				"region", options.Endpoint.region,
+				"metric", options.MetricName,
 				"bucket", options.Bucket,
-				"metric", options.Desc,
 				"err", err,
 			)
 
