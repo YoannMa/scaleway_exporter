@@ -172,7 +172,7 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 
 		if err != nil {
 			c.errors.WithLabelValues("bucket").Add(1)
-			_ = level.Warn(c.logger).Log("msg", "can't fetch the list of buckets", "err", err)
+			_ = level.Warn(c.logger).Log("msg", "can't fetch the list of buckets", "region", endpoint.region, "err", err)
 
 			return
 		}
@@ -191,13 +191,13 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 
 		projectId := strings.Split(*buckets.Owner.ID, ":")[0]
 
-		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d buckets under projectID %s : %s", len(bucketNames), projectId, bucketNames))
+		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d buckets", len(bucketNames)), "region", endpoint.region, "bucketNames", fmt.Sprintf("%s", bucketNames))
 
 		err = scwReq.SetBody(&BucketInfoRequestBody{ProjectId: projectId, BucketsName: bucketNames})
 
 		if err != nil {
 			c.errors.WithLabelValues("bucket").Add(1)
-			_ = level.Warn(c.logger).Log("msg", "can't fetch details of buckets", "err", err)
+			_ = level.Warn(c.logger).Log("msg", "can't fetch details of buckets", "region", endpoint.region, "err", err)
 
 			return
 		}
@@ -208,7 +208,7 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 
 		if err != nil {
 			c.errors.WithLabelValues("bucket").Add(1)
-			_ = level.Warn(c.logger).Log("msg", "can't fetch details of buckets", "err", err)
+			_ = level.Warn(c.logger).Log("msg", "can't fetch details of buckets", "region", endpoint.region, "err", err)
 
 			return
 		}
@@ -220,7 +220,7 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 
 			wg.Add(1)
 
-			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for bucket : %s", name))
+			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for bucket : %s", name), "region", endpoint.region)
 
 			go c.FetchMetricsForBucket(&wg, ch, name, bucket, endpoint)
 		}
@@ -285,6 +285,7 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 		c.errors.WithLabelValues("bucket").Add(1)
 		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the metric",
+			"region", options.Endpoint.region,
 			"metric", options.MetricName,
 			"bucket", options.Bucket,
 			"err", err,
@@ -303,9 +304,10 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 			c.errors.WithLabelValues("bucket").Add(1)
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
-				"err", err,
+				"region", options.Endpoint.region,
 				"bucket", options.Bucket,
 				"metric", options.Desc,
+				"err", err,
 			)
 
 			continue
@@ -330,6 +332,7 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 		c.errors.WithLabelValues("bucket").Add(1)
 		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the metric",
+			"region", options.Endpoint.region,
 			"metric", options.MetricName,
 			"bucket", options.Bucket,
 			"err", err,
@@ -350,10 +353,11 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 			c.errors.WithLabelValues("bucket").Add(1)
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
-				"err", err,
+				"region", options.Endpoint.region,
 				"bucket", options.Bucket,
 				"metric", options.MetricName,
 				"extra_label", extraLabel,
+				"err", err,
 			)
 
 			continue

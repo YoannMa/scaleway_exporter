@@ -111,7 +111,7 @@ func (c *LoadBalancerCollector) Collect(ch chan<- prometheus.Metric) {
 			return
 		}
 
-		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d loadbalancer instances", len(response.LBs)))
+		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d loadbalancer instances", len(response.LBs)), "region", region)
 
 		var wg sync.WaitGroup
 		defer wg.Wait()
@@ -120,7 +120,7 @@ func (c *LoadBalancerCollector) Collect(ch chan<- prometheus.Metric) {
 
 			wg.Add(1)
 
-			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for loadbalancer : %s", loadbalancer.Name))
+			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for loadbalancer : %s", loadbalancer.Name), "region", region)
 
 			go c.FetchLoadbalancerMetrics(&wg, ch, loadbalancer)
 		}
@@ -176,9 +176,10 @@ func (c *LoadBalancerCollector) FetchLoadbalancerMetrics(parentWg *sync.WaitGrou
 		c.errors.WithLabelValues("loadbalancer").Add(1)
 		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the metric for the loadbalancer",
-			"err", err,
+			"region", loadbalancer.Region,
 			"loadbalancerId", loadbalancer.ID,
 			"loadbalancerName", loadbalancer.Name,
+			"err", err,
 		)
 
 		return
@@ -200,10 +201,11 @@ func (c *LoadBalancerCollector) FetchLoadbalancerMetrics(parentWg *sync.WaitGrou
 		default:
 			_ = level.Debug(c.logger).Log(
 				"msg", "unmapped scaleway metric",
-				"err", err,
+				"region", loadbalancer.Region,
 				"loadbalancerId", loadbalancer.ID,
 				"loadbalancerName", loadbalancer.Name,
 				"scwMetric", timeseries.Name,
+				"err", err,
 			)
 			continue
 		}
@@ -212,10 +214,11 @@ func (c *LoadBalancerCollector) FetchLoadbalancerMetrics(parentWg *sync.WaitGrou
 			c.errors.WithLabelValues("database").Add(1)
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
-				"err", err,
+				"region", loadbalancer.Region,
 				"loadbalancerId", loadbalancer.ID,
 				"loadbalancerName", loadbalancer.Name,
 				"metric", series,
+				"err", err,
 			)
 
 			continue

@@ -107,7 +107,7 @@ func (c *RedisCollector) Collect(ch chan<- prometheus.Metric) {
 
 		if err != nil {
 			c.errors.WithLabelValues("clusters").Add(1)
-			_ = level.Warn(c.logger).Log("msg", "can't fetch clusters", "err", err)
+			_ = level.Warn(c.logger).Log("msg", "can't fetch clusters", "zone", zone, "err", err)
 
 			return
 		}
@@ -119,7 +119,7 @@ func (c *RedisCollector) Collect(ch chan<- prometheus.Metric) {
 
 			wg.Add(1)
 
-			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for cluster : %s", cluster.ID))
+			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for cluster : %s", cluster.ID), "zone", zone)
 
 			go c.FetchRedisMetrics(&wg, ch, zone, cluster)
 		}
@@ -144,9 +144,10 @@ func (c *RedisCollector) FetchRedisMetrics(parentWg *sync.WaitGroup, ch chan<- p
 		c.errors.WithLabelValues("redis").Add(1)
 		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the metric for the redis cluster",
-			"err", err,
-			"clusterId", cluster.ID,
 			"clusterName", cluster.Name,
+			"clusterId", cluster.ID,
+			"zone", zone,
+			"err", err,
 		)
 
 		return
@@ -172,10 +173,11 @@ func (c *RedisCollector) FetchRedisMetrics(parentWg *sync.WaitGroup, ch chan<- p
 		default:
 			_ = level.Debug(c.logger).Log(
 				"msg", "unmapped scaleway metric",
-				"err", err,
-				"clusterId", cluster.ID,
-				"clusterName", cluster.Name,
 				"scwMetric", timeseries.Name,
+				"clusterName", cluster.Name,
+				"clusterId", cluster.ID,
+				"zone", zone,
+				"err", err,
 			)
 			continue
 		}
@@ -184,10 +186,11 @@ func (c *RedisCollector) FetchRedisMetrics(parentWg *sync.WaitGroup, ch chan<- p
 			c.errors.WithLabelValues("redis").Add(1)
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
-				"err", err,
-				"clusterId", cluster.ID,
 				"clusterName", cluster.Name,
+				"clusterId", cluster.ID,
 				"metric", series,
+				"zone", zone,
+				"err", err,
 			)
 
 			continue

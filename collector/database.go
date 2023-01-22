@@ -104,13 +104,17 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 			c.errors.WithLabelValues("database").Add(1)
 			_ = level.Warn(c.logger).Log(
 				"msg", "can't fetch the list of databases",
+				"region", region,
 				"err", err,
 			)
 
 			return
 		}
 
-		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d database instances", len(response.Instances)))
+		_ = level.Debug(c.logger).Log(
+			"msg", fmt.Sprintf("found %d database instances", len(response.Instances)),
+			"region", region,
+		)
 
 		for _, instance := range response.Instances {
 
@@ -168,6 +172,7 @@ func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch
 		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the metric for the instance",
 			"err", err,
+			"region", instance.Region,
 			"instanceId", instance.ID,
 			"instanceName", instance.Name,
 		)
@@ -198,6 +203,7 @@ func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch
 			_ = level.Debug(c.logger).Log(
 				"msg", "unmapped scaleway metric",
 				"err", err,
+				"region", instance.Region,
 				"instanceId", instance.ID,
 				"instanceName", instance.Name,
 				"scwMetric", timeseries.Name,
@@ -210,6 +216,7 @@ func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
 				"err", err,
+				"region", instance.Region,
 				"instanceId", instance.ID,
 				"instanceName", instance.Name,
 				"metric", series,
