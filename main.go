@@ -36,9 +36,11 @@ type Config struct {
 	ScalewaySecretKey            string     `arg:"env:SCALEWAY_SECRET_KEY"`
 	ScalewayRegion               scw.Region `arg:"env:SCALEWAY_REGION"`
 	ScalewayZone                 scw.Zone   `arg:"env:SCALEWAY_ZONE"`
+	ScalewayOrganizationId       string     `arg:"env:SCALEWAY_ORGANIZATION_ID"`
 	HTTPTimeout                  int        `arg:"env:HTTP_TIMEOUT"`
 	WebAddr                      string     `arg:"env:WEB_ADDR"`
 	WebPath                      string     `arg:"env:WEB_PATH"`
+	DisableBillingCollector      bool       `arg:"--disable-billing-collector"`
 	DisableBucketCollector       bool       `arg:"--disable-bucket-collector"`
 	DisableDatabaseCollector     bool       `arg:"--disable-database-collector"`
 	DisableLoadBalancerCollector bool       `arg:"--disable-loadbalancer-collector"`
@@ -52,6 +54,7 @@ func main() {
 		HTTPTimeout:                  5000,
 		WebPath:                      "/metrics",
 		WebAddr:                      ":9503",
+		DisableBillingCollector:      false,
 		DisableBucketCollector:       false,
 		DisableDatabaseCollector:     false,
 		DisableLoadBalancerCollector: false,
@@ -128,15 +131,22 @@ func main() {
 	r.MustRegister(errors)
 	r.MustRegister(collector.NewExporterCollector(logger, Version, Revision, BuildDate, GoVersion, StartTime))
 
-	if !c.DisableDatabaseCollector {
-		r.MustRegister(collector.NewDatabaseCollector(logger, errors, client, timeout, regions))
+	if !c.DisableBillingCollector && c.ScalewayOrganizationId != "" {
+		r.MustRegister(collector.NewBillingCollector(logger, errors, client, timeout, c.ScalewayOrganizationId))
 	}
+
 	if !c.DisableBucketCollector {
 		r.MustRegister(collector.NewBucketCollector(logger, errors, client, timeout, regions))
 	}
+
+	if !c.DisableDatabaseCollector {
+		r.MustRegister(collector.NewDatabaseCollector(logger, errors, client, timeout, regions))
+	}
+
 	if !c.DisableLoadBalancerCollector {
 		r.MustRegister(collector.NewLoadBalancerCollector(logger, errors, client, timeout, regions))
 	}
+
 	if !c.DisableRedisCollector {
 		r.MustRegister(collector.NewRedisCollector(logger, errors, client, timeout, zones))
 	}
