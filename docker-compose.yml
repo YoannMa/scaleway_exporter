@@ -1,8 +1,13 @@
 version: '3.7'
 
 services:
-  scaleway_exporter:
-    build: .
+  exporter:
+    build:
+      context: .
+      dockerfile: .
+      args:
+        - VERSION=development
+        - REVISION=0000000
     ports:
       - 9503:9503
     env_file:
