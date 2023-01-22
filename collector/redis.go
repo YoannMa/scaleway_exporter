@@ -29,9 +29,13 @@ type RedisCollector struct {
 
 // NewRedisCollector returns a new RedisCollector.
 func NewRedisCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, zones []scw.Zone) *RedisCollector {
+
 	errors.WithLabelValues("redis").Add(0)
 
+	_ = level.Info(logger).Log("msg", "Redis collector enabled")
+
 	labels := []string{"id", "name", "node"}
+
 	return &RedisCollector{
 		logger:  logger,
 		errors:  errors,

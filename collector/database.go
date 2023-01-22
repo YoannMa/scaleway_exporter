@@ -34,8 +34,12 @@ type DatabaseCollector struct {
 func NewDatabaseCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, regions []scw.Region) *DatabaseCollector {
 	errors.WithLabelValues("database").Add(0)
 
+	_ = level.Info(logger).Log("msg", "Database collector enabled")
+
 	labels := []string{"id", "name", "region", "engine", "type"}
+
 	labelsNode := []string{"id", "name", "node"}
+
 	return &DatabaseCollector{
 		logger:    logger,
 		errors:    errors,

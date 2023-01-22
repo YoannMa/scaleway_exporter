@@ -41,7 +41,10 @@ type Endpoint struct {
 
 // NewBucketCollector returns a new BucketCollector.
 func NewBucketCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, regions []scw.Region) *BucketCollector {
+
 	errors.WithLabelValues("bucket").Add(0)
+
+	_ = level.Info(logger).Log("msg", "Bucket collector enabled")
 
 	accessKey, _ := client.GetAccessKey()
 

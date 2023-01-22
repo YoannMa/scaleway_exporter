@@ -34,9 +34,13 @@ type LoadBalancerCollector struct {
 
 // NewLoadBalancerCollector returns a new LoadBalancerCollector.
 func NewLoadBalancerCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, regions []scw.Region) *LoadBalancerCollector {
+
 	errors.WithLabelValues("loadbalancer").Add(0)
 
+	_ = level.Info(logger).Log("msg", "Loadbalancer collector enabled")
+
 	labels := []string{"id", "name", "region", "type"}
+
 	return &LoadBalancerCollector{
 		logger:   logger,
 		errors:   errors,
