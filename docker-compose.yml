@@ -9,7 +9,7 @@ services:
       - scaleway.env
 
   prometheus:
-    image: prom/prometheus:v2.21.0
+    image: prom/prometheus:v2.41.0
     volumes:
       - ./hack/prometheus/:/etc/prometheus/
     command:
@@ -21,14 +21,14 @@ services:
       - 9090:9090
 
   alertmanager:
-    image: prom/alertmanager:v0.21.0
+    image: prom/alertmanager:v0.25.0
     depends_on:
       - prometheus
     ports:
       - 9093:9093
 
   grafana:
-    image: grafana/grafana:7.2.0
+    image: grafana/grafana:9.3.2
     depends_on:
       - prometheus
     ports:
