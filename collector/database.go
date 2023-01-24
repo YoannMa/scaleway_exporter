@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/scaleway/scaleway-sdk-go/api/rdb/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
@@ -88,7 +88,6 @@ func (c *DatabaseCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect is called by the Prometheus registry when collecting metrics.
 func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
-
 	_, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
@@ -96,7 +95,6 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 	defer wg.Wait()
 
 	for _, region := range c.regions {
-
 		// create a list to hold our databases
 		response, err := c.rdbClient.ListInstances(&rdb.ListInstancesRequest{Region: region}, scw.WithAllPages())
 
@@ -117,7 +115,6 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 		)
 
 		for _, instance := range response.Instances {
-
 			wg.Add(1)
 
 			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for database instance : %s", instance.Name))
@@ -125,11 +122,9 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 			go c.FetchMetricsForInstance(&wg, ch, instance)
 		}
 	}
-
 }
 
 func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, instance *rdb.Instance) {
-
 	defer parentWg.Done()
 
 	labels := []string{
@@ -141,9 +136,9 @@ func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch
 	}
 
 	// TODO check if it is possible to add database tag as labels
-	//for _, tags := range instance.Tags {
-	//	labels = append(labels, tags)
-	//}
+	// for _, tags := range instance.Tags {
+	//     labels = append(labels, tags)
+	// }
 
 	var active float64
 
@@ -181,7 +176,6 @@ func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch
 	}
 
 	for _, timeseries := range metricResponse.Timeseries {
-
 		labelsNode := []string{
 			instance.ID,
 			instance.Name,

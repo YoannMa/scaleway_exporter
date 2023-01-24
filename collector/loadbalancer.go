@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/scaleway/scaleway-sdk-go/api/lb/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
@@ -34,7 +34,6 @@ type LoadBalancerCollector struct {
 
 // NewLoadBalancerCollector returns a new LoadBalancerCollector.
 func NewLoadBalancerCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, regions []scw.Region) *LoadBalancerCollector {
-
 	errors.WithLabelValues("loadbalancer").Add(0)
 
 	_ = level.Info(logger).Log("msg", "Loadbalancer collector enabled")
@@ -77,7 +76,7 @@ func NewLoadBalancerCollector(logger log.Logger, errors *prometheus.CounterVec, 
 	}
 }
 
-// Describe sends the super-set of all possible descriptors of metrics
+// Describe sends the super-set of all possible descriptors of metrics.
 // collected by this Collector.
 func (c *LoadBalancerCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.Up
@@ -87,7 +86,7 @@ func (c *LoadBalancerCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.NewConnection
 }
 
-// InstanceMetrics: instance metrics
+// InstanceMetrics: instance metrics.
 type LbMetrics struct {
 	// Timeseries: time series of metrics of a given instance
 	Timeseries []*scw.TimeSeries `json:"timeseries"`
@@ -95,12 +94,10 @@ type LbMetrics struct {
 
 // Collect is called by the Prometheus registry when collecting metrics.
 func (c *LoadBalancerCollector) Collect(ch chan<- prometheus.Metric) {
-
 	_, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
 	for _, region := range c.regions {
-
 		// create a list to hold our loadbalancers
 		response, err := c.lbClient.ListLBs(&lb.ListLBsRequest{Region: region}, scw.WithAllPages())
 
@@ -117,7 +114,6 @@ func (c *LoadBalancerCollector) Collect(ch chan<- prometheus.Metric) {
 		defer wg.Wait()
 
 		for _, loadbalancer := range response.LBs {
-
 			wg.Add(1)
 
 			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for loadbalancer : %s", loadbalancer.Name), "region", region)
@@ -139,9 +135,9 @@ func (c *LoadBalancerCollector) FetchLoadbalancerMetrics(parentWg *sync.WaitGrou
 	}
 
 	// TODO check if it is possible to add loadbalancer tag as labels
-	//for _, tags := range instance.Tags {
-	//	labels = append(labels, tags)
-	//}
+	// for _, tags := range instance.Tags {
+	//     labels = append(labels, tags)
+	// }
 
 	var active float64
 
@@ -186,7 +182,6 @@ func (c *LoadBalancerCollector) FetchLoadbalancerMetrics(parentWg *sync.WaitGrou
 	}
 
 	for _, timeseries := range metricResponse.Timeseries {
-
 		var series *prometheus.Desc
 
 		switch timeseries.Name {

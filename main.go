@@ -7,36 +7,41 @@ import (
 	"time"
 
 	arg "github.com/alexflint/go-arg"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 	"github.com/yoannma/scaleway_exporter/collector"
 )
 
 var (
-	// Version of scaleway_exporter.
-	Version string
+	// Version of this binary.
+	Version string //nolint:gochecknoglobals // LDFlags
+
 	// Revision or Commit this binary was built from.
-	Revision string
+	Revision string //nolint: gochecknoglobals // LDFlags
+
 	// BuildDate this binary was built.
-	BuildDate string
+	BuildDate string //nolint:gochecknoglobals // LDFlags
+
 	// GoVersion running this binary.
-	GoVersion = runtime.Version()
+	GoVersion = runtime.Version() //nolint:gochecknoglobals // LDFlags
+
 	// StartTime has the time this was started.
-	StartTime = time.Now()
+	StartTime = time.Now() //nolint:gochecknoglobals // LDFlags
 )
 
-// Config gets its content from env and passes it on to different packages
+// Config gets its content from env and passes it on to different packages.
 type Config struct {
 	Debug                        bool       `arg:"env:DEBUG"`
 	ScalewayAccessKey            string     `arg:"env:SCALEWAY_ACCESS_KEY"`
 	ScalewaySecretKey            string     `arg:"env:SCALEWAY_SECRET_KEY"`
 	ScalewayRegion               scw.Region `arg:"env:SCALEWAY_REGION"`
 	ScalewayZone                 scw.Zone   `arg:"env:SCALEWAY_ZONE"`
-	ScalewayOrganizationId       string     `arg:"env:SCALEWAY_ORGANIZATION_ID"`
+	ScalewayOrganizationID       string     `arg:"env:SCALEWAY_ORGANIZATION_ID"`
 	HTTPTimeout                  int        `arg:"env:HTTP_TIMEOUT"`
 	WebAddr                      string     `arg:"env:WEB_ADDR"`
 	WebPath                      string     `arg:"env:WEB_PATH"`
@@ -74,12 +79,12 @@ func main() {
 	)
 
 	if c.ScalewayAccessKey == "" {
-		_ = level.Error(logger).Log("msg", "Scaleway Access Key is required", "err")
+		_ = level.Error(logger).Log("msg", "Scaleway Access Key is required")
 		os.Exit(1)
 	}
 
 	if c.ScalewaySecretKey == "" {
-		_ = level.Error(logger).Log("msg", "Scaleway Secret Key is required", "err")
+		_ = level.Error(logger).Log("msg", "Scaleway Secret Key is required")
 		os.Exit(1)
 	}
 
@@ -88,7 +93,7 @@ func main() {
 		_ = level.Info(logger).Log("msg", "Scaleway Region is set to ALL")
 		regions = scw.AllRegions
 	} else {
-		regions = []scw.Region{scw.Region(c.ScalewayRegion)}
+		regions = []scw.Region{c.ScalewayRegion}
 	}
 
 	var zones []scw.Zone
@@ -96,7 +101,7 @@ func main() {
 		_ = level.Info(logger).Log("msg", "Scaleway Zone is set to ALL")
 		zones = scw.AllZones
 	} else {
-		zones = []scw.Zone{scw.Zone(c.ScalewayZone)}
+		zones = []scw.Zone{c.ScalewayZone}
 	}
 
 	_ = level.Info(logger).Log(
@@ -126,13 +131,13 @@ func main() {
 	}, []string{"collector"})
 
 	r := prometheus.NewRegistry()
-	r.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
-	r.MustRegister(prometheus.NewGoCollector())
+	r.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	r.MustRegister(collectors.NewGoCollector())
 	r.MustRegister(errors)
 	r.MustRegister(collector.NewExporterCollector(logger, Version, Revision, BuildDate, GoVersion, StartTime))
 
-	if !c.DisableBillingCollector && c.ScalewayOrganizationId != "" {
-		r.MustRegister(collector.NewBillingCollector(logger, errors, client, timeout, c.ScalewayOrganizationId))
+	if !c.DisableBillingCollector && c.ScalewayOrganizationID != "" {
+		r.MustRegister(collector.NewBillingCollector(logger, errors, client, timeout, c.ScalewayOrganizationID))
 	}
 
 	if !c.DisableBucketCollector {
@@ -151,9 +156,7 @@ func main() {
 		r.MustRegister(collector.NewRedisCollector(logger, errors, client, timeout, zones))
 	}
 
-	http.Handle(c.WebPath,
-		promhttp.HandlerFor(r, promhttp.HandlerOpts{}),
-	)
+	http.Handle(c.WebPath, promhttp.HandlerFor(r, promhttp.HandlerOpts{}))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<html>
@@ -166,8 +169,17 @@ func main() {
 	})
 
 	_ = level.Info(logger).Log("msg", "listening", "addr", c.WebAddr)
-	if err := http.ListenAndServe(c.WebAddr, nil); err != nil {
-		_ = level.Error(logger).Log("msg", "http listenandserve error", "err", err)
+
+	server := &http.Server{
+		Addr:              c.WebAddr,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	err = server.ListenAndServe()
+
+	if err != nil {
+		_ = level.Error(logger).Log("msg", "http ListenAndServe error", "err", err)
+
 		os.Exit(1)
 	}
 }

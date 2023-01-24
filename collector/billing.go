@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/scaleway/scaleway-sdk-go/api/account/v2"
 	"github.com/scaleway/scaleway-sdk-go/scw"
@@ -17,19 +17,17 @@ import (
 type BillingCollector struct {
 	logger         log.Logger
 	errors         *prometheus.CounterVec
-	endpoints      []Endpoint
 	timeout        time.Duration
 	client         *scw.Client
 	accountClient  *account.API
-	organizationId string
+	organizationID string
 
 	Consumptions *prometheus.Desc
 	Update       *prometheus.Desc
 }
 
 // NewBillingCollector returns a new BucketCollector.
-func NewBillingCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, organizationId string) *BillingCollector {
-
+func NewBillingCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, organizationID string) *BillingCollector {
 	errors.WithLabelValues("bucket").Add(0)
 
 	_ = level.Info(logger).Log("msg", "Billing collector enabled")
@@ -40,7 +38,7 @@ func NewBillingCollector(logger log.Logger, errors *prometheus.CounterVec, clien
 		timeout:        timeout,
 		client:         client,
 		accountClient:  account.NewAPI(client),
-		organizationId: organizationId,
+		organizationID: organizationID,
 
 		Consumptions: prometheus.NewDesc(
 			"scaleway_billing_consumptions",
@@ -70,7 +68,7 @@ type ConsumptionValue struct {
 
 type Consumption struct {
 	Description   string           `json:"description"`
-	ProjectId     string           `json:"project_id"`
+	ProjectID     string           `json:"project_id"`
 	Category      string           `json:"category"`
 	OperationPath string           `json:"operation_path"`
 	Value         ConsumptionValue `json:"value"`
@@ -83,14 +81,12 @@ type BillingResponse struct {
 
 // Collect is called by the Prometheus registry when collecting metrics.
 func (c *BillingCollector) Collect(ch chan<- prometheus.Metric) {
-
 	_, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	response, err := c.accountClient.ListProjects(&account.ListProjectsRequest{OrganizationID: c.organizationId}, scw.WithAllPages())
+	response, err := c.accountClient.ListProjects(&account.ListProjectsRequest{OrganizationID: c.organizationID}, scw.WithAllPages())
 
 	if err != nil {
-
 		c.errors.WithLabelValues("billing").Add(1)
 		_ = level.Warn(c.logger).Log("msg", "can't fetch the list of projects", "err", err)
 
@@ -98,7 +94,6 @@ func (c *BillingCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	if len(response.Projects) == 0 {
-
 		c.errors.WithLabelValues("billing").Add(1)
 		_ = level.Error(c.logger).Log("msg", "No projects were found, perhaps you are missing the 'ProjectManager' permission")
 
@@ -108,13 +103,12 @@ func (c *BillingCollector) Collect(ch chan<- prometheus.Metric) {
 	projects := make(map[string]string)
 
 	for _, project := range response.Projects {
-
 		projects[project.ID] = project.Name
 	}
 
 	query := url.Values{}
 
-	query.Set("organization_id", c.organizationId)
+	query.Set("organization_id", c.organizationID)
 
 	var billingResponse BillingResponse
 
@@ -126,7 +120,6 @@ func (c *BillingCollector) Collect(ch chan<- prometheus.Metric) {
 	}, &billingResponse)
 
 	if err != nil {
-
 		c.errors.WithLabelValues("billing").Add(1)
 		_ = level.Warn(c.logger).Log(
 			"msg", "Could not fetch the billing data, perhaps you are missing the 'BillingReadOnly' permission'",
@@ -137,13 +130,12 @@ func (c *BillingCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	for _, consumption := range billingResponse.Consumptions {
-
 		ch <- prometheus.MustNewConstMetric(
 			c.Consumptions,
 			prometheus.GaugeValue,
 			float64(consumption.Value.Units)+float64(consumption.Value.Nanos)/1e9,
-			consumption.ProjectId,
-			projects[consumption.ProjectId],
+			consumption.ProjectID,
+			projects[consumption.ProjectID],
 			consumption.Category,
 			consumption.OperationPath,
 			consumption.Description,

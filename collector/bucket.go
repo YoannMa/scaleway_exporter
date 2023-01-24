@@ -14,8 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
@@ -40,7 +40,6 @@ type Endpoint struct {
 
 // NewBucketCollector returns a new BucketCollector.
 func NewBucketCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, regions []scw.Region) *BucketCollector {
-
 	errors.WithLabelValues("bucket").Add(0)
 
 	_ = level.Info(logger).Log("msg", "Bucket collector enabled")
@@ -52,7 +51,6 @@ func NewBucketCollector(logger log.Logger, errors *prometheus.CounterVec, client
 	endpoints := make([]Endpoint, len(regions))
 
 	for i, region := range regions {
-
 		newSession, err := session.NewSession(&aws.Config{
 			Credentials: credentials.NewStaticCredentials(accessKey, secretKey, ""),
 			Region:      aws.String(fmt.Sprint(region)),
@@ -125,11 +123,11 @@ type BucketInfoList struct {
 }
 
 type BucketInfoRequestBody struct {
-	ProjectId   string   `json:"project_id"`
+	ProjectID   string   `json:"project_id"`
 	BucketsName []string `json:"buckets_name"`
 }
 
-// InstanceMetrics: instance metrics
+// Metric InstanceMetrics: instance metrics.
 type Metric struct {
 	// Timeseries: time series of metrics of a given bucket
 	Timeseries []*scw.TimeSeries `json:"timeseries"`
@@ -162,12 +160,10 @@ type HandleMultiMetricsOptions struct {
 
 // Collect is called by the Prometheus registry when collecting metrics.
 func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
-
 	_, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
 	for _, endpoint := range c.endpoints {
-
 		buckets, err := endpoint.s3Client.ListBuckets(&s3.ListBucketsInput{})
 
 		if err != nil {
@@ -185,15 +181,18 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 		var bucketNames []string
 
 		for _, bucket := range buckets.Buckets {
-
 			bucketNames = append(bucketNames, *bucket.Name)
 		}
 
-		projectId := strings.Split(*buckets.Owner.ID, ":")[0]
+		projectID := strings.Split(*buckets.Owner.ID, ":")[0]
 
-		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d buckets", len(bucketNames)), "region", endpoint.region, "bucketNames", fmt.Sprintf("%s", bucketNames))
+		_ = level.Debug(c.logger).Log(
+			"msg", fmt.Sprintf("found %d buckets", len(bucketNames)),
+			"region", endpoint.region,
+			"bucketNames", fmt.Sprintf("%s", bucketNames),
+		)
 
-		err = scwReq.SetBody(&BucketInfoRequestBody{ProjectId: projectId, BucketsName: bucketNames})
+		err = scwReq.SetBody(&BucketInfoRequestBody{ProjectID: projectID, BucketsName: bucketNames})
 
 		if err != nil {
 			c.errors.WithLabelValues("bucket").Add(1)
@@ -217,26 +216,26 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 		defer wg.Wait()
 
 		for name, bucket := range response.Buckets {
-
 			wg.Add(1)
 
-			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for bucket : %s", name), "region", endpoint.region)
-
+			_ = level.Debug(c.logger).Log(
+				"msg", fmt.Sprintf("Fetching metrics for bucket : %s", name),
+				"region", endpoint.region,
+			)
 			go c.FetchMetricsForBucket(&wg, ch, name, bucket, endpoint)
 		}
 	}
 }
 
 func (c *BucketCollector) FetchMetricsForBucket(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, name string, bucket BucketInfo, endpoint Endpoint) {
-
 	defer parentWg.Done()
 
 	labels := []string{name, fmt.Sprint(endpoint.region), fmt.Sprint(bucket.IsPublic)}
 
 	// TODO check if it is possible to add bucket tag as labels
-	//for _, tags := range instance.Tags {
-	//	labels = append(labels, tags)
-	//}
+	// for _, tags := range instance.Tags {
+	//     labels = append(labels, tags)
+	// }
 
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -266,14 +265,12 @@ func (c *BucketCollector) FetchMetricsForBucket(parentWg *sync.WaitGroup, ch cha
 		Endpoint:   endpoint,
 		Desc:       c.StorageUsage,
 		GetExtraLabel: func(timeseries *scw.TimeSeries) string {
-
 			return timeseries.Metadata["type"]
 		},
 	})
 }
 
 func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, options *HandleSimpleMetricOptions) {
-
 	defer parentWg.Done()
 
 	var response Metric
@@ -281,7 +278,6 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 	err := c.FetchMetric(options.Bucket, options.MetricName, &response, options.Endpoint)
 
 	if err != nil {
-
 		c.errors.WithLabelValues("bucket").Add(1)
 		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the metric",
@@ -295,7 +291,6 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 	}
 
 	for _, timeseries := range response.Timeseries {
-
 		sort.Slice(timeseries.Points, func(i, j int) bool {
 			return timeseries.Points[i].Timestamp.Before(timeseries.Points[j].Timestamp)
 		})
@@ -320,7 +315,6 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 }
 
 func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, options *HandleMultiMetricsOptions) {
-
 	defer parentWg.Done()
 
 	var response Metric
@@ -328,7 +322,6 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 	err := c.FetchMetric(options.Bucket, options.MetricName, &response, options.Endpoint)
 
 	if err != nil {
-
 		c.errors.WithLabelValues("bucket").Add(1)
 		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the metric",
@@ -342,7 +335,6 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 	}
 
 	for _, timeseries := range response.Timeseries {
-
 		sort.Slice(timeseries.Points, func(i, j int) bool {
 			return timeseries.Points[i].Timestamp.Before(timeseries.Points[j].Timestamp)
 		})
@@ -388,7 +380,6 @@ func (c *BucketCollector) FetchMetric(Bucket string, MetricName MetricName, resp
 	err := endpoint.client.Do(scwReq, &response)
 
 	if err != nil {
-
 		return err
 	}
 
