@@ -149,6 +149,26 @@ func (c *DatabaseCollector) FetchMetricsForInstance(parentWg *sync.WaitGroup, ch
 		active = 1.0
 	case rdb.InstanceStatusAutohealing:
 		active = 0.5
+	case rdb.InstanceStatusProvisioning:
+		active = 0.5
+	case rdb.InstanceStatusConfiguring:
+		active = 0.5
+	case rdb.InstanceStatusDeleting:
+		active = 0.5
+	case rdb.InstanceStatusSnapshotting:
+		active = 0.5
+	case rdb.InstanceStatusRestarting:
+		active = 0.5
+	case rdb.InstanceStatusUnknown:
+		active = 0.0
+	case rdb.InstanceStatusError:
+		active = 0.0
+	case rdb.InstanceStatusLocked:
+		active = 0.0
+	case rdb.InstanceStatusInitializing:
+		active = 0.0
+	case rdb.InstanceStatusDiskFull:
+		active = 0.0
 	default:
 		active = 0.0
 	}

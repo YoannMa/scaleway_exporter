@@ -363,17 +363,16 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 	}
 }
 
-func (c *BucketCollector) FetchMetric(Bucket string, MetricName MetricName, response *Metric, endpoint Endpoint) error {
-
+func (c *BucketCollector) FetchMetric(bucket string, metricName MetricName, response *Metric, endpoint Endpoint) error {
 	query := url.Values{}
 
 	query.Add("start_date", time.Now().Add(-1*time.Hour).Format(time.RFC3339))
 	query.Add("end_date", time.Now().Format(time.RFC3339))
-	query.Add("metric_name", fmt.Sprint(MetricName))
+	query.Add("metric_name", fmt.Sprint(metricName))
 
 	scwReq := &scw.ScalewayRequest{
 		Method: "GET",
-		Path:   "/object-private/v1/regions/" + fmt.Sprint(endpoint.region) + "/buckets/" + Bucket + "/metrics",
+		Path:   "/object-private/v1/regions/" + fmt.Sprint(endpoint.region) + "/buckets/" + bucket + "/metrics",
 		Query:  query,
 	}
 

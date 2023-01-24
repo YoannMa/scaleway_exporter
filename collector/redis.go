@@ -2,7 +2,9 @@ package collector
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"sync"
 	"time"
@@ -75,28 +77,33 @@ func (c *RedisCollector) Collect(ch chan<- prometheus.Metric) {
 	_, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	var wg sync.WaitGroup
-	defer wg.Wait()
-
 	for _, zone := range c.zones {
 		clusterList, err := c.redisClient.ListClusters(&redis.ListClustersRequest{Zone: zone})
 
 		if err != nil {
-			c.errors.WithLabelValues("clusters").Add(1)
-			_ = level.Warn(c.logger).Log("msg", "can't fetch clusters", "zone", zone, "err", err)
+			var responseError *scw.ResponseError
 
-			return
+			switch {
+			case errors.As(err, &responseError) && responseError.StatusCode == http.StatusNotImplemented:
+				_ = level.Debug(c.logger).Log("msg", "Loadbalancer is not supported in this zone", "zone", zone)
+				return
+			default:
+				c.errors.WithLabelValues("clusters").Add(1)
+				_ = level.Warn(c.logger).Log("msg", "can't fetch the list of clusters", "err", err, "zone", zone)
+
+				return
+			}
 		}
 
-		var wg2 sync.WaitGroup
-		defer wg2.Wait()
+		var wg sync.WaitGroup
+		defer wg.Wait()
 
 		for _, cluster := range clusterList.Clusters {
-			wg2.Add(1)
+			wg.Add(1)
 
 			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for cluster : %s", cluster.ID), "zone", zone)
 
-			go c.FetchRedisMetrics(&wg2, ch, zone, cluster)
+			go c.FetchRedisMetrics(&wg, ch, zone, cluster)
 		}
 	}
 }

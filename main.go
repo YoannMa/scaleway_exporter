@@ -149,7 +149,7 @@ func main() {
 	}
 
 	if !c.DisableLoadBalancerCollector {
-		r.MustRegister(collector.NewLoadBalancerCollector(logger, errors, client, timeout, regions))
+		r.MustRegister(collector.NewLoadBalancerCollector(logger, errors, client, timeout, zones))
 	}
 
 	if !c.DisableRedisCollector {
