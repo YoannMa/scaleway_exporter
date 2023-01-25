@@ -2,44 +2,51 @@ package collector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/scaleway/scaleway-sdk-go/api/redis/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
 
 // RedisCollector collects metrics about all redis nodes.
 type RedisCollector struct {
-	logger  log.Logger
-	errors  *prometheus.CounterVec
-	client  *scw.Client
-	timeout time.Duration
-	zones   []scw.Zone
+	logger      log.Logger
+	errors      *prometheus.CounterVec
+	client      *scw.Client
+	redisClient *redis.API
+	timeout     time.Duration
+	zones       []scw.Zone
 
-	CpuUsagePercent      *prometheus.Desc
+	CPUUsagePercent      *prometheus.Desc
 	MemUsagePercent      *prometheus.Desc
-	DbMemoryUsagePercent *prometheus.Desc
+	DBMemoryUsagePercent *prometheus.Desc
 }
 
 // NewRedisCollector returns a new RedisCollector.
 func NewRedisCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, zones []scw.Zone) *RedisCollector {
 	errors.WithLabelValues("redis").Add(0)
 
-	labels := []string{"id", "name", "node"}
-	return &RedisCollector{
-		logger:  logger,
-		errors:  errors,
-		client:  client,
-		timeout: timeout,
-		zones:   zones,
+	_ = level.Info(logger).Log("msg", "Redis collector enabled")
 
-		CpuUsagePercent: prometheus.NewDesc(
+	labels := []string{"id", "name", "node"}
+
+	return &RedisCollector{
+		logger:      logger,
+		errors:      errors,
+		client:      client,
+		redisClient: redis.NewAPI(client),
+		timeout:     timeout,
+		zones:       zones,
+
+		CPUUsagePercent: prometheus.NewDesc(
 			"scaleway_redis_cpu_usage_percent",
 			"The redis node CPU usage percentage",
 			labels, nil,
@@ -49,7 +56,7 @@ func NewRedisCollector(logger log.Logger, errors *prometheus.CounterVec, client 
 			"The redis node memory usage percentage",
 			labels, nil,
 		),
-		DbMemoryUsagePercent: prometheus.NewDesc(
+		DBMemoryUsagePercent: prometheus.NewDesc(
 			"scaleway_redis_db_memory_usage_percent",
 			"The redis node database memory usage percentage",
 			labels, nil,
@@ -60,96 +67,69 @@ func NewRedisCollector(logger log.Logger, errors *prometheus.CounterVec, client 
 // Describe sends the super-set of all possible descriptors of metrics
 // collected by this Collector.
 func (c *RedisCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- c.CpuUsagePercent
+	ch <- c.CPUUsagePercent
 	ch <- c.MemUsagePercent
-	ch <- c.DbMemoryUsagePercent
-}
-
-type Cluster struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type Clusters struct {
-	Cluster []*Cluster `json:"clusters"`
-}
-
-// InstanceMetrics: instance metrics
-type RedisMetrics struct {
-	// Timeseries: time series of metrics of a given instance
-	Timeseries []*scw.TimeSeries `json:"timeseries"`
+	ch <- c.DBMemoryUsagePercent
 }
 
 // Collect is called by the Prometheus registry when collecting metrics.
 func (c *RedisCollector) Collect(ch chan<- prometheus.Metric) {
-
 	_, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	var wg sync.WaitGroup
-	defer wg.Wait()
-
 	for _, zone := range c.zones {
-
-		scwReq := &scw.ScalewayRequest{
-			Method:  "GET",
-			Path:    "/redis/v1/zones/" + fmt.Sprint(zone) + "/clusters",
-			Headers: http.Header{},
-		}
-
-		var response Clusters
-
-		err := c.client.Do(scwReq, &response)
+		clusterList, err := c.redisClient.ListClusters(&redis.ListClustersRequest{Zone: zone})
 
 		if err != nil {
-			c.errors.WithLabelValues("clusters").Add(1)
-			_ = level.Warn(c.logger).Log("msg", "can't fetch clusters", "err", err)
+			var responseError *scw.ResponseError
 
-			return
+			switch {
+			case errors.As(err, &responseError) && responseError.StatusCode == http.StatusNotImplemented:
+				_ = level.Debug(c.logger).Log("msg", "Loadbalancer is not supported in this zone", "zone", zone)
+				return
+			default:
+				c.errors.WithLabelValues("clusters").Add(1)
+				_ = level.Warn(c.logger).Log("msg", "can't fetch the list of clusters", "err", err, "zone", zone)
+
+				return
+			}
 		}
 
 		var wg sync.WaitGroup
 		defer wg.Wait()
 
-		for _, cluster := range response.Cluster {
-
+		for _, cluster := range clusterList.Clusters {
 			wg.Add(1)
 
-			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for cluster : %s", cluster.ID))
+			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for cluster : %s", cluster.ID), "zone", zone)
 
 			go c.FetchRedisMetrics(&wg, ch, zone, cluster)
 		}
-
 	}
 }
 
-func (c *RedisCollector) FetchRedisMetrics(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, zone scw.Zone, cluster *Cluster) {
-
+func (c *RedisCollector) FetchRedisMetrics(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, zone scw.Zone, cluster *redis.Cluster) {
 	defer parentWg.Done()
 
-	scwReq := &scw.ScalewayRequest{
-		Method: "GET",
-		Path:   "/redis/v1/zones/" + fmt.Sprint(zone) + "/clusters/" + fmt.Sprint(cluster.ID) + "/metrics",
-	}
-
-	var metricResponse RedisMetrics
-
-	err := c.client.Do(scwReq, &metricResponse)
+	metricResponse, err := c.redisClient.GetClusterMetrics(&redis.GetClusterMetricsRequest{
+		Zone:      zone,
+		ClusterID: cluster.ID,
+	})
 
 	if err != nil {
 		c.errors.WithLabelValues("redis").Add(1)
 		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the metric for the redis cluster",
-			"err", err,
-			"clusterId", cluster.ID,
 			"clusterName", cluster.Name,
+			"clusterId", cluster.ID,
+			"zone", zone,
+			"err", err,
 		)
 
 		return
 	}
 
 	for _, timeseries := range metricResponse.Timeseries {
-
 		labels := []string{
 			cluster.ID,
 			cluster.Name,
@@ -160,18 +140,19 @@ func (c *RedisCollector) FetchRedisMetrics(parentWg *sync.WaitGroup, ch chan<- p
 
 		switch timeseries.Name {
 		case "cpu_usage_percent":
-			series = c.CpuUsagePercent
+			series = c.CPUUsagePercent
 		case "mem_usage_percent":
 			series = c.MemUsagePercent
 		case "db_memory_usage_percent":
-			series = c.DbMemoryUsagePercent
+			series = c.DBMemoryUsagePercent
 		default:
 			_ = level.Debug(c.logger).Log(
 				"msg", "unmapped scaleway metric",
-				"err", err,
-				"clusterId", cluster.ID,
-				"clusterName", cluster.Name,
 				"scwMetric", timeseries.Name,
+				"clusterName", cluster.Name,
+				"clusterId", cluster.ID,
+				"zone", zone,
+				"err", err,
 			)
 			continue
 		}
@@ -180,10 +161,11 @@ func (c *RedisCollector) FetchRedisMetrics(parentWg *sync.WaitGroup, ch chan<- p
 			c.errors.WithLabelValues("redis").Add(1)
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
-				"err", err,
-				"clusterId", cluster.ID,
+				"metric", timeseries.Name,
 				"clusterName", cluster.Name,
-				"metric", series,
+				"clusterId", cluster.ID,
+				"zone", zone,
+				"err", err,
 			)
 
 			continue

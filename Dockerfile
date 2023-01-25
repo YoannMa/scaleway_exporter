@@ -10,10 +10,12 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM base AS build
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION
+ARG REVISION
 RUN --mount=target=. \
     --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/scaleway-exporter .
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-X main.Version=${VERSION} -X main.BuildDate=$(date -Iseconds) -X main.Revision=${REVISION}" -o /out/scaleway-exporter .
 
 FROM golangci/golangci-lint:v1.50-alpine AS lint-base
 

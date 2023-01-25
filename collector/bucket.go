@@ -14,8 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
@@ -27,10 +27,9 @@ type BucketCollector struct {
 	endpoints []Endpoint
 	timeout   time.Duration
 
-	ObjectCount          *prometheus.Desc
-	Bandwidth            *prometheus.Desc
-	StorageUsageStandard *prometheus.Desc
-	StorageUsageGlacier  *prometheus.Desc
+	ObjectCount  *prometheus.Desc
+	Bandwidth    *prometheus.Desc
+	StorageUsage *prometheus.Desc
 }
 
 type Endpoint struct {
@@ -43,6 +42,8 @@ type Endpoint struct {
 func NewBucketCollector(logger log.Logger, errors *prometheus.CounterVec, client *scw.Client, timeout time.Duration, regions []scw.Region) *BucketCollector {
 	errors.WithLabelValues("bucket").Add(0)
 
+	_ = level.Info(logger).Log("msg", "Bucket collector enabled")
+
 	accessKey, _ := client.GetAccessKey()
 
 	secretKey, _ := client.GetSecretKey()
@@ -50,7 +51,6 @@ func NewBucketCollector(logger log.Logger, errors *prometheus.CounterVec, client
 	endpoints := make([]Endpoint, len(regions))
 
 	for i, region := range regions {
-
 		newSession, err := session.NewSession(&aws.Config{
 			Credentials: credentials.NewStaticCredentials(accessKey, secretKey, ""),
 			Region:      aws.String(fmt.Sprint(region)),
@@ -88,15 +88,10 @@ func NewBucketCollector(logger log.Logger, errors *prometheus.CounterVec, client
 			"Bucket's Bandwidth usage",
 			[]string{"name", "region", "public"}, nil,
 		),
-		StorageUsageStandard: prometheus.NewDesc(
-			"scaleway_s3_storage_usage_standard_bytes",
+		StorageUsage: prometheus.NewDesc(
+			"scaleway_s3_storage_usage_bytes",
 			"Bucket's Storage usage",
-			[]string{"name", "region", "public"}, nil,
-		),
-		StorageUsageGlacier: prometheus.NewDesc(
-			"scaleway_s3_storage_usage_glacier_bytes",
-			"Bucket's Storage usage",
-			[]string{"name", "region", "public"}, nil,
+			[]string{"name", "region", "public", "storage_class"}, nil,
 		),
 	}
 }
@@ -106,8 +101,7 @@ func NewBucketCollector(logger log.Logger, errors *prometheus.CounterVec, client
 func (c *BucketCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.ObjectCount
 	ch <- c.Bandwidth
-	ch <- c.StorageUsageStandard
-	ch <- c.StorageUsageGlacier
+	ch <- c.StorageUsage
 }
 
 type BucketInfo struct {
@@ -129,11 +123,11 @@ type BucketInfoList struct {
 }
 
 type BucketInfoRequestBody struct {
-	ProjectId   string   `json:"project_id"`
+	ProjectID   string   `json:"project_id"`
 	BucketsName []string `json:"buckets_name"`
 }
 
-// InstanceMetrics: instance metrics
+// Metric InstanceMetrics: instance metrics.
 type Metric struct {
 	// Timeseries: time series of metrics of a given bucket
 	Timeseries []*scw.TimeSeries `json:"timeseries"`
@@ -156,26 +150,25 @@ type HandleSimpleMetricOptions struct {
 }
 
 type HandleMultiMetricsOptions struct {
-	Bucket     string
-	MetricName MetricName
-	DescMatrix map[string]*prometheus.Desc
-	labels     []string
-	Endpoint   Endpoint
+	Bucket        string
+	MetricName    MetricName
+	Desc          *prometheus.Desc
+	labels        []string
+	Endpoint      Endpoint
+	GetExtraLabel func(*scw.TimeSeries) string
 }
 
 // Collect is called by the Prometheus registry when collecting metrics.
 func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
-
 	_, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
 	for _, endpoint := range c.endpoints {
-
 		buckets, err := endpoint.s3Client.ListBuckets(&s3.ListBucketsInput{})
 
 		if err != nil {
 			c.errors.WithLabelValues("bucket").Add(1)
-			_ = level.Warn(c.logger).Log("msg", "can't fetch the list of buckets", "err", err)
+			_ = level.Warn(c.logger).Log("msg", "can't fetch the list of buckets", "region", endpoint.region, "err", err)
 
 			return
 		}
@@ -188,19 +181,22 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 		var bucketNames []string
 
 		for _, bucket := range buckets.Buckets {
-
 			bucketNames = append(bucketNames, *bucket.Name)
 		}
 
-		projectId := strings.Split(*buckets.Owner.ID, ":")[0]
+		projectID := strings.Split(*buckets.Owner.ID, ":")[0]
 
-		_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("found %d buckets under projectID %s : %s", len(bucketNames), projectId, bucketNames))
+		_ = level.Debug(c.logger).Log(
+			"msg", fmt.Sprintf("found %d buckets", len(bucketNames)),
+			"region", endpoint.region,
+			"bucketNames", fmt.Sprintf("%s", bucketNames),
+		)
 
-		err = scwReq.SetBody(&BucketInfoRequestBody{ProjectId: projectId, BucketsName: bucketNames})
+		err = scwReq.SetBody(&BucketInfoRequestBody{ProjectID: projectID, BucketsName: bucketNames})
 
 		if err != nil {
 			c.errors.WithLabelValues("bucket").Add(1)
-			_ = level.Warn(c.logger).Log("msg", "can't fetch details of buckets", "err", err)
+			_ = level.Warn(c.logger).Log("msg", "can't fetch details of buckets", "region", endpoint.region, "err", err)
 
 			return
 		}
@@ -211,7 +207,7 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 
 		if err != nil {
 			c.errors.WithLabelValues("bucket").Add(1)
-			_ = level.Warn(c.logger).Log("msg", "can't fetch details of buckets", "err", err)
+			_ = level.Warn(c.logger).Log("msg", "can't fetch details of buckets", "region", endpoint.region, "err", err)
 
 			return
 		}
@@ -220,26 +216,26 @@ func (c *BucketCollector) Collect(ch chan<- prometheus.Metric) {
 		defer wg.Wait()
 
 		for name, bucket := range response.Buckets {
-
 			wg.Add(1)
 
-			_ = level.Debug(c.logger).Log("msg", fmt.Sprintf("Fetching metrics for bucket : %s", name))
-
+			_ = level.Debug(c.logger).Log(
+				"msg", fmt.Sprintf("Fetching metrics for bucket : %s", name),
+				"region", endpoint.region,
+			)
 			go c.FetchMetricsForBucket(&wg, ch, name, bucket, endpoint)
 		}
 	}
 }
 
 func (c *BucketCollector) FetchMetricsForBucket(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, name string, bucket BucketInfo, endpoint Endpoint) {
-
 	defer parentWg.Done()
 
 	labels := []string{name, fmt.Sprint(endpoint.region), fmt.Sprint(bucket.IsPublic)}
 
 	// TODO check if it is possible to add bucket tag as labels
-	//for _, tags := range instance.Tags {
-	//	labels = append(labels, tags)
-	//}
+	// for _, tags := range instance.Tags {
+	//     labels = append(labels, tags)
+	// }
 
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -266,13 +262,15 @@ func (c *BucketCollector) FetchMetricsForBucket(parentWg *sync.WaitGroup, ch cha
 		Bucket:     name,
 		MetricName: StorageUsage,
 		labels:     labels,
-		DescMatrix: map[string]*prometheus.Desc{"STANDARD": c.StorageUsageStandard, "GLACIER": c.StorageUsageGlacier},
 		Endpoint:   endpoint,
+		Desc:       c.StorageUsage,
+		GetExtraLabel: func(timeseries *scw.TimeSeries) string {
+			return timeseries.Metadata["type"]
+		},
 	})
 }
 
 func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, options *HandleSimpleMetricOptions) {
-
 	defer parentWg.Done()
 
 	var response Metric
@@ -280,10 +278,10 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 	err := c.FetchMetric(options.Bucket, options.MetricName, &response, options.Endpoint)
 
 	if err != nil {
-
 		c.errors.WithLabelValues("bucket").Add(1)
 		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the metric",
+			"region", options.Endpoint.region,
 			"metric", options.MetricName,
 			"bucket", options.Bucket,
 			"err", err,
@@ -293,7 +291,6 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 	}
 
 	for _, timeseries := range response.Timeseries {
-
 		sort.Slice(timeseries.Points, func(i, j int) bool {
 			return timeseries.Points[i].Timestamp.Before(timeseries.Points[j].Timestamp)
 		})
@@ -302,9 +299,10 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 			c.errors.WithLabelValues("bucket").Add(1)
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
-				"err", err,
+				"region", options.Endpoint.region,
+				"metric", options.MetricName,
 				"bucket", options.Bucket,
-				"metric", options.Desc,
+				"err", err,
 			)
 
 			continue
@@ -317,7 +315,6 @@ func (c *BucketCollector) HandleSimpleMetric(parentWg *sync.WaitGroup, ch chan<-
 }
 
 func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<- prometheus.Metric, options *HandleMultiMetricsOptions) {
-
 	defer parentWg.Done()
 
 	var response Metric
@@ -325,10 +322,10 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 	err := c.FetchMetric(options.Bucket, options.MetricName, &response, options.Endpoint)
 
 	if err != nil {
-
-		c.errors.WithLabelValues("bucket").Add(float64(len(options.DescMatrix)))
+		c.errors.WithLabelValues("bucket").Add(1)
 		_ = level.Warn(c.logger).Log(
 			"msg", "can't fetch the metric",
+			"region", options.Endpoint.region,
 			"metric", options.MetricName,
 			"bucket", options.Bucket,
 			"err", err,
@@ -338,30 +335,21 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 	}
 
 	for _, timeseries := range response.Timeseries {
-
 		sort.Slice(timeseries.Points, func(i, j int) bool {
 			return timeseries.Points[i].Timestamp.Before(timeseries.Points[j].Timestamp)
 		})
 
-		series, ok := options.DescMatrix[timeseries.Metadata["type"]]
-
-		if !ok {
-			_ = level.Debug(c.logger).Log(
-				"msg", "unmapped scaleway metric",
-				"err", err,
-				"bucket", options.Bucket,
-				"scwMetric", timeseries.Name,
-			)
-			continue
-		}
+		extraLabel := options.GetExtraLabel(timeseries)
 
 		if len(timeseries.Points) == 0 {
 			c.errors.WithLabelValues("bucket").Add(1)
 			_ = level.Warn(c.logger).Log(
 				"msg", "no data were returned for the metric",
-				"err", err,
+				"region", options.Endpoint.region,
 				"bucket", options.Bucket,
-				"metric", series,
+				"metric", options.MetricName,
+				"extra_label", extraLabel,
+				"err", err,
 			)
 
 			continue
@@ -369,28 +357,28 @@ func (c *BucketCollector) HandleMultiMetrics(parentWg *sync.WaitGroup, ch chan<-
 
 		value := float64(timeseries.Points[len(timeseries.Points)-1].Value)
 
-		ch <- prometheus.MustNewConstMetric(series, prometheus.GaugeValue, value, options.labels...)
+		allLabels := append(append([]string{}, options.labels...), extraLabel)
+
+		ch <- prometheus.MustNewConstMetric(options.Desc, prometheus.GaugeValue, value, allLabels...)
 	}
 }
 
-func (c *BucketCollector) FetchMetric(Bucket string, MetricName MetricName, response *Metric, endpoint Endpoint) error {
-
+func (c *BucketCollector) FetchMetric(bucket string, metricName MetricName, response *Metric, endpoint Endpoint) error {
 	query := url.Values{}
 
 	query.Add("start_date", time.Now().Add(-1*time.Hour).Format(time.RFC3339))
 	query.Add("end_date", time.Now().Format(time.RFC3339))
-	query.Add("metric_name", fmt.Sprint(MetricName))
+	query.Add("metric_name", fmt.Sprint(metricName))
 
 	scwReq := &scw.ScalewayRequest{
 		Method: "GET",
-		Path:   "/object-private/v1/regions/" + fmt.Sprint(endpoint.region) + "/buckets/" + Bucket + "/metrics",
+		Path:   "/object-private/v1/regions/" + fmt.Sprint(endpoint.region) + "/buckets/" + bucket + "/metrics",
 		Query:  query,
 	}
 
 	err := endpoint.client.Do(scwReq, &response)
 
 	if err != nil {
-
 		return err
 	}
 
