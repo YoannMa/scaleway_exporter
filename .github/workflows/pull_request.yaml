@@ -28,10 +28,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Get Hash
-        id: hash
-        run: echo "git_hash=$(git rev-parse --short "$GITHUB_SHA")" >> $GITHUB_HASH
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
 
@@ -72,6 +68,6 @@ jobs:
           push: true
           args: |
             VERSION=master
-            REVISION=${{ env.hash }}
+            REVISION=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

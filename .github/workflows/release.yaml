@@ -31,10 +31,6 @@ jobs:
         id: get_version
         uses: battila7/get-version-action@v2
 
-      - name: Get Hash
-        id: hash
-        run: echo "git_hash=$(git rev-parse --short "$GITHUB_SHA")" >> $GITHUB_HASH
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
 
@@ -75,7 +71,7 @@ jobs:
           target: bin
           args: |
             VERSION=${{ steps.get_version.outputs.version }}
-            REVISION=${{ env.hash }}
+            REVISION=${{ github.sha }}
           platforms: linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
           push: true
           tags: ${{ steps.meta.outputs.tags }}
