@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    target-branch: "master"
+    directory: "/"
+    labels:
+      - "dependencies"
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "github-actions"
+    target-branch: "master"
+    directory: "/"
+    labels:
+      - "dependencies"
+      - "CI"
+    schedule:
+      interval: "daily"
+  - package-ecosystem: docker
+    target-branch: "master"
+    directory: "/"
+    labels:
+      - "dependencies"
+      - "CI"
+    schedule:
+      interval: "daily"
