@@ -63,7 +63,7 @@ func (c *BillingCollector) Describe(ch chan<- *prometheus.Desc) {
 type ConsumptionValue struct {
 	CurrencyCode string `json:"currency_code"`
 	Units        int32  `json:"units"`
-	Nanos        uint32 `json:"nanos"`
+	Nanos        int32  `json:"nanos"`
 }
 
 type Consumption struct {
