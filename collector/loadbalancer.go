@@ -219,6 +219,9 @@ func (c *LoadBalancerCollector) FetchLoadbalancerMetrics(parentWg *sync.WaitGrou
 			series = c.Connection
 		case "current_new_connection_rate_sec":
 			series = c.NewConnection
+		case "server_status":
+			// Should export metric for this ?
+			continue
 		default:
 			_ = level.Debug(c.logger).Log(
 				"msg", "unmapped scaleway metric",
